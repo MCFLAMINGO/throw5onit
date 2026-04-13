@@ -166,29 +166,150 @@ async function importWallet(pk) {
   return { privateKey: pk, ...acc };
 }
 
-// Persist private key in localStorage so wallet survives page close
+/* ── IndexedDB key store (primary) — iOS never evicts IDB the way it evicts localStorage ── */
+const IDB_DB   = 'throw_idb';
+const IDB_STORE = 'kv';
+let _idb = null;
+
+async function openIDB() {
+  if (_idb) return _idb;
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(IDB_DB, 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE);
+    req.onsuccess = e => { _idb = e.target.result; res(_idb); };
+    req.onerror   = () => rej(req.error);
+  });
+}
+async function idbSet(key, val) {
+  try {
+    const db = await openIDB();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(val, key);
+      tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+    });
+  } catch(e) { console.warn('idbSet failed', e); }
+}
+async function idbGet(key) {
+  try {
+    const db = await openIDB();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = () => res(req.result ?? null);
+      req.onerror   = () => rej(req.error);
+    });
+  } catch(e) { return null; }
+}
+
+// Persist private key — IndexedDB primary, localStorage fallback
 let _storedPK = null;
 
 function saveWallet(acc) {
   _storedPK = acc.privateKey;
-  try { localStorage.setItem('throw_pk', acc.privateKey); } catch(e) {}
+  idbSet('throw_pk', acc.privateKey);  // primary (async, fire-and-forget)
+  try { localStorage.setItem('throw_pk', acc.privateKey); } catch(e) {}  // fallback
 }
 
 async function loadWallet() {
   if (!_storedPK) {
+    // Try IndexedDB first
+    _storedPK = await idbGet('throw_pk');
+  }
+  if (!_storedPK) {
+    // Fall back to localStorage
     try { _storedPK = localStorage.getItem('throw_pk'); } catch(e) {}
+  }
+  if (_storedPK) {
+    // Write back to IDB in case it was only in localStorage
+    idbSet('throw_pk', _storedPK);
   }
   if (!_storedPK) return null;
   return importWallet(_storedPK);
 }
 
-async function initWallet(acc) {
+async function initWallet(acc, isNew = false) {
   state.account = acc;
   saveWallet(acc);
   updateAddrDisplay();
   await refreshBalances();
   renderCrew();
   showScreen('wallet');
+  if (isNew) {
+    // First time — give user 600ms to land on wallet screen, then offer backup
+    setTimeout(() => offerBackup(acc), 600);
+  }
+}
+
+/* ── WALLET BACKUP — vCard contact + email ── */
+function offerBackup(acc) {
+  const handle = getHandle() || 'YOU';
+  const pk     = acc.privateKey;
+  const addr   = acc.address;
+
+  const modal = document.getElementById('backup-offer-modal');
+  if (!modal) return;
+  document.getElementById('backup-offer-name').textContent = handle;
+  modal.classList.remove('hidden');
+
+  document.getElementById('btn-backup-contact').onclick = () => {
+    saveAsContact(handle, addr, pk);
+    modal.classList.add('hidden');
+  };
+  document.getElementById('btn-backup-email').onclick = () => {
+    emailBackup(handle, addr, pk);
+    modal.classList.add('hidden');
+  };
+  document.getElementById('btn-backup-skip').onclick = () => {
+    modal.classList.add('hidden');
+  };
+}
+
+function saveAsContact(handle, addr, pk) {
+  // Build a vCard — iOS will open Contacts app and offer to save it
+  const name  = handle.toUpperCase();
+  const vcard = [
+    'BEGIN:VCARD',
+    'VERSION:3.0',
+    `FN:${name} THROW`,
+    `N:THROW;${name};;;`,
+    `ORG:THROW`,
+    `NOTE:THROW wallet address: ${addr}\nPrivate Key (KEEP SECRET): ${pk}`,
+    'END:VCARD'
+  ].join('\r\n');
+
+  const blob = new Blob([vcard], { type: 'text/vcard;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `${name.toLowerCase()}-throw.vcf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+  // Also mark that backup was offered so we don’t nag again
+  try { localStorage.setItem('throw_backed_up', '1'); } catch(e) {}
+  idbSet('throw_backed_up', '1');
+}
+
+function emailBackup(handle, addr, pk) {
+  const subject = encodeURIComponent(`[THROW] Your ${handle} wallet backup`);
+  const body = encodeURIComponent(
+    `THROW Wallet Backup\n` +
+    `Name: ${handle}\n` +
+    `Address: ${addr}\n` +
+    `Private Key (KEEP SECRET — anyone with this owns your wallet): ${pk}\n\n` +
+    `To recover: open throw5onit.com, tap "Import Key" on setup screen, paste the key above.`
+  );
+  window.open(`mailto:?subject=${subject}&body=${body}`, '_self');
+  try { localStorage.setItem('throw_backed_up', '1'); } catch(e) {}
+  idbSet('throw_backed_up', '1');
+}
+
+// Check if backup has been done — used to re-prompt if still missing
+function hasBackedUp() {
+  try { if (localStorage.getItem('throw_backed_up')) return true; } catch(e) {}
+  return false;
 }
 
 function updateAddrDisplay() {
@@ -1838,6 +1959,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('setup-choice').classList.add('hidden');
     document.getElementById('setup-solo').classList.remove('hidden');
   };
+  document.getElementById('btn-recover-wallet').onclick = () => {
+    // Show solo panel with import area pre-opened
+    document.getElementById('setup-choice').classList.add('hidden');
+    document.getElementById('setup-solo').classList.remove('hidden');
+    document.getElementById('import-area').classList.remove('hidden');
+    // Update label so context is clear
+    const hint = document.querySelector('#setup-solo .handle-input-hint');
+    if (hint) hint.textContent = 'Enter your name, then paste your backup key below';
+    // Scroll import area into view
+    setTimeout(() => document.getElementById('import-key')?.focus(), 150);
+  };
 
   /* ── Setup screen ── */
   document.getElementById('btn-new-wallet').onclick = async () => {
@@ -2053,7 +2185,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Auto-add the friend who invited you
       if (_giftFromAddr && _giftFromName) upsertContact(_giftFromName, _giftFromAddr);
       window.history.replaceState({}, '', window.location.pathname);
-      await initWallet(acc);
+      await initWallet(acc, true); // new gifted wallet — offer backup
     } catch(e) {
       console.warn('Gift import failed:', e);
       showScreen('splash');
@@ -2113,13 +2245,13 @@ function setMode(mode) {
 }
 
 /* ── After wallet created/imported — route based on mode ── */
-async function routeAfterWallet(account) {
+async function routeAfterWallet(account, isNew = true) {
   if (merchant.mode === 'merchant') {
     document.getElementById('merchant-addr-display').textContent =
-      '••••' + account.address.slice(-4).toUpperCase();
+      '\u2022\u2022\u2022\u2022' + account.address.slice(-4).toUpperCase();
     showScreen('merchant-setup');
   } else {
-    await initWallet(account);
+    await initWallet(account, isNew);
   }
 }
 

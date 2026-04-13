@@ -2568,3 +2568,60 @@ h1 { font-size: 18px; font-weight: 700; }
   text-align: center;
   min-height: 1.4em;
 }
+
+/* ── BACKUP OFFER MODAL ─────────────────────────────────────────────── */
+.backup-offer-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: rgba(0,0,0,0.85);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.backup-offer-modal.hidden { display: none; }
+.backup-offer-inner {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r) var(--r) 0 0;
+  padding: 28px 24px 32px;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+.backup-offer-icon {
+  font-size: 2.5rem;
+  line-height: 1;
+}
+.backup-offer-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text);
+}
+.backup-offer-body {
+  font-size: 0.85rem;
+  color: var(--text-2);
+  line-height: 1.5;
+  max-width: 300px;
+}
+.backup-offer-inner .btn-primary,
+.backup-offer-inner .btn-ghost {
+  width: 100%;
+}
+.btn-skip-backup {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 0.78rem;
+  cursor: pointer;
+  font-family: var(--font);
+  padding: 4px 0;
+}

@@ -147,6 +147,7 @@
     <div class="wallet-options" id="setup-choice">
       <button class="btn-primary" id="btn-invited-by-friend" style="font-size:1rem;padding:16px 0;">A friend invited me</button>
       <button class="btn-ghost" id="btn-just-me" style="font-size:1rem;padding:14px 0;">Just me — create my wallet</button>
+      <button class="btn-ghost setup-recover-btn" id="btn-recover-wallet" style="font-size:0.88rem;padding:12px 0;border-color:rgba(255,255,255,0.15);color:rgba(255,255,255,0.45);">Had an account — recover it</button>
     </div>
 
     <div id="setup-solo" class="hidden">
@@ -597,6 +598,22 @@
       <button class="btn-ghost" id="btn-contact-bet">OPEN BET</button>
     </div>
     <button class="btn-delete-contact" id="btn-contact-delete">Remove contact</button>
+  </div>
+</div>
+
+<!-- ═══ OVERLAY: BACKUP OFFER ════════════════════════════════════════ -->
+<div id="backup-offer-modal" class="backup-offer-modal hidden">
+  <div class="backup-offer-inner">
+    <div class="backup-offer-icon">📱</div>
+    <div class="backup-offer-title">Save your wallet, <span id="backup-offer-name">friend</span></div>
+    <p class="backup-offer-body">Your key lives on this device. If you lose it, the money is gone. Back it up now — takes 10 seconds.</p>
+    <button class="btn-primary" id="btn-backup-contact">
+      📗 Save to Phone Contacts
+    </button>
+    <button class="btn-ghost" id="btn-backup-email">
+      📧 Email it to myself
+    </button>
+    <button class="btn-skip-backup" id="btn-backup-skip">I’ll risk it — skip</button>
   </div>
 </div>
 
