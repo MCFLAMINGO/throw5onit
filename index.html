@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#000000" />
+
+  <!-- CSP handled via Vercel headers (vercel.json) -->
+  <title>THROW — Digital Cash for Real Life</title>
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="THROW — Digital Cash for Real Life" />
+  <meta property="og:description" content="Throw money at your friends. No login. No app store. Just tap and flick." />
+  <meta property="og:url" content="https://www.throw5onit.com" />
+  <meta property="og:type" content="website" />
+
+  <!-- Twitter / X Card -->
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:site" content="@Throw_Bet" />
+  <meta name="twitter:creator" content="@Throw_Bet" />
+  <meta name="twitter:title" content="THROW — Digital Cash for Real Life" />
+  <meta name="twitter:description" content="Throw money at your friends. No login. No app store. $50 max. Built on Tempo." />
+
+  <link rel="manifest" href="manifest.json" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ═══ SCREEN: SPLASH (shown to everyone on first open) ══════════════════ -->
+<div id="screen-splash" class="screen active">
+  <div class="splash-inner">
+    <img src="icon-512.png" class="splash-icon" alt="THROW" />
+    <h1 class="wordmark splash-wordmark">THROW</h1>
+    <p class="splash-tag">Digital cash.<br/>Throw it like you mean it.</p>
+    <div class="splash-trust">
+      <div class="trust-item">
+        <span class="trust-icon">&#9651;</span>
+        <span>Built on Tempo</span>
+      </div>
+      <div class="trust-item">
+        <span class="trust-icon">&#9632;</span>
+        <span>$50 max per throw</span>
+      </div>
+      <div class="trust-item">
+        <span class="trust-icon">&#9651;</span>
+        <span>No login. No bank.</span>
+      </div>
+    </div>
+    <button class="btn-primary splash-enter" id="btn-splash-enter">Enter</button>
+    <p class="splash-legal">THROW is a peer-to-peer payment tool. Not a gambling platform.<br/>$0.10 service fee per transaction.</p>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: INSTALL QR (shown on desktop after splash) ═════════════════ -->
+<div id="screen-install" class="screen">
+  <div class="install-inner">
+    <img src="icon-512.png" class="splash-icon" alt="THROW" />
+    <h1 class="wordmark">THROW</h1>
+    <p class="install-sub">Scan with your phone to install</p>
+    <div class="install-qr-wrap">
+      <img id="install-qr-img" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzFtbSIgaGVpZ2h0PSIzMW1tIiB2ZXJzaW9uPSIxLjEiIHZpZXdCb3g9IjAgMCAzMSAzMSIgZmlsbF9jb2xvcj0iYmxhY2siIGJhY2tfY29sb3I9IndoaXRlIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik0xLDFIMlYySDF6TTIsMUgzVjJIMnpNMywxSDRWMkgzek00LDFINVYySDR6TTUsMUg2VjJINXpNNiwxSDdWMkg2ek03LDFIOFYySDd6TTExLDFIMTJWMkgxMXpNMTQsMUgxNVYySDE0ek0xNSwxSDE2VjJIMTV6TTE3LDFIMThWMkgxN3pNMTgsMUgxOVYySDE4ek0xOSwxSDIwVjJIMTl6TTIwLDFIMjFWMkgyMHpNMjMsMUgyNFYySDIzek0yNCwxSDI1VjJIMjR6TTI1LDFIMjZWMkgyNXpNMjYsMUgyN1YySDI2ek0yNywxSDI4VjJIMjd6TTI4LDFIMjlWMkgyOHpNMjksMUgzMFYySDI5ek0xLDJIMlYzSDF6TTcsMkg4VjNIN3pNOSwySDEwVjNIOXpNMTMsMkgxNFYzSDEzek0xNSwySDE2VjNIMTV6TTE2LDJIMTdWM0gxNnpNMTgsMkgxOVYzSDE4ek0xOSwySDIwVjNIMTl6TTIwLDJIMjFWM0gyMHpNMjMsMkgyNFYzSDIzek0yOSwySDMwVjNIMjl6TTEsM0gyVjRIMXpNMywzSDRWNEgzek00LDNINVY0SDR6TTUsM0g2VjRINXpNNywzSDhWNEg3ek0xMCwzSDExVjRIMTB6TTEyLDNIMTNWNEgxMnpNMTQsM0gxNVY0SDE0ek0xNSwzSDE2VjRIMTV6TTE3LDNIMThWNEgxN3pNMTksM0gyMFY0SDE5ek0yMSwzSDIyVjRIMjF6TTIzLDNIMjRWNEgyM3pNMjUsM0gyNlY0SDI1ek0yNiwzSDI3VjRIMjZ6TTI3LDNIMjhWNEgyN3pNMjksM0gzMFY0SDI5ek0xLDRIMlY1SDF6TTMsNEg0VjVIM3pNNCw0SDVWNUg0ek01LDRINlY1SDV6TTcsNEg4VjVIN3pNMTQsNEgxNVY1SDE0ek0xNSw0SDE2VjVIMTV6TTE2LDRIMTdWNUgxNnpNMTcsNEgxOFY1SDE3ek0xOSw0SDIwVjVIMTl6TTIwLDRIMjFWNUgyMHpNMjEsNEgyMlY1SDIxek0yMyw0SDI0VjVIMjN6TTI1LDRIMjZWNUgyNXpNMjYsNEgyN1Y1SDI2ek0yNyw0SDI4VjVIMjd6TTI5LDRIMzBWNUgyOXpNMSw1SDJWNkgxek0zLDVINFY2SDN6TTQsNUg1VjZINHpNNSw1SDZWNkg1ek03LDVIOFY2SDd6TTksNUgxMFY2SDl6TTExLDVIMTJWNkgxMXpNMTIsNUgxM1Y2SDEyek0xNSw1SDE2VjZIMTV6TTE2LDVIMTdWNkgxNnpNMTgsNUgxOVY2SDE4ek0xOSw1SDIwVjZIMTl6TTIwLDVIMjFWNkgyMHpNMjMsNUgyNFY2SDIzek0yNSw1SDI2VjZIMjV6TTI2LDVIMjdWNkgyNnpNMjcsNUgyOFY2SDI3ek0yOSw1SDMwVjZIMjl6TTEsNkgyVjdIMXpNNyw2SDhWN0g3ek0xMCw2SDExVjdIMTB6TTEyLDZIMTNWN0gxMnpNMTQsNkgxNVY3SDE0ek0xNiw2SDE3VjdIMTZ6TTE5LDZIMjBWN0gxOXpNMjAsNkgyMVY3SDIwek0yMSw2SDIyVjdIMjF6TTIzLDZIMjRWN0gyM3pNMjksNkgzMFY3SDI5ek0xLDdIMlY4SDF6TTIsN0gzVjhIMnpNMyw3SDRWOEgzek00LDdINVY4SDR6TTUsN0g2VjhINXpNNiw3SDdWOEg2ek03LDdIOFY4SDd6TTksN0gxMFY4SDl6TTExLDdIMTJWOEgxMXpNMTMsN0gxNFY4SDEzek0xNSw3SDE2VjhIMTV6TTE3LDdIMThWOEgxN3pNMTksN0gyMFY4SDE5ek0yMSw3SDIyVjhIMjF6TTIzLDdIMjRWOEgyM3pNMjQsN0gyNVY4SDI0ek0yNSw3SDI2VjhIMjV6TTI2LDdIMjdWOEgyNnpNMjcsN0gyOFY4SDI3ek0yOCw3SDI5VjhIMjh6TTI5LDdIMzBWOEgyOXpNMTAsOEgxMVY5SDEwek0xMSw4SDEyVjlIMTF6TTE0LDhIMTVWOUgxNHpNMTUsOEgxNlY5SDE1ek0xNiw4SDE3VjlIMTZ6TTE4LDhIMTlWOUgxOHpNMTksOEgyMFY5SDE5ek0yMCw4SDIxVjlIMjB6TTIxLDhIMjJWOUgyMXpNMSw5SDJWMTBIMXpNMyw5SDRWMTBIM3pNNSw5SDZWMTBINXpNNyw5SDhWMTBIN3pNMTAsOUgxMVYxMEgxMHpNMTUsOUgxNlYxMEgxNXpNMTgsOUgxOVYxMEgxOHpNMjEsOUgyMlYxMEgyMXpNMjUsOUgyNlYxMEgyNXpNMjgsOUgyOVYxMEgyOHpNMSwxMEgyVjExSDF6TTIsMTBIM1YxMUgyek0zLDEwSDRWMTFIM3pNNCwxMEg1VjExSDR6TTYsMTBIN1YxMUg2ek05LDEwSDEwVjExSDl6TTEzLDEwSDE0VjExSDEzek0xNSwxMEgxNlYxMUgxNXpNMTcsMTBIMThWMTFIMTd6TTE5LDEwSDIwVjExSDE5ek0yMSwxMEgyMlYxMUgyMXpNMjMsMTBIMjRWMTFIMjN6TTI2LDEwSDI3VjExSDI2ek0yOSwxMEgzMFYxMUgyOXpNNSwxMUg2VjEySDV6TTcsMTFIOFYxMkg3ek0xMCwxMUgxMVYxMkgxMHpNMTQsMTFIMTVWMTJIMTR6TTE5LDExSDIwVjEySDE5ek0yMSwxMUgyMlYxMkgyMXpNMjIsMTFIMjNWMTJIMjJ6TTIzLDExSDI0VjEySDIzek0yNCwxMUgyNVYxMkgyNHpNMjcsMTFIMjhWMTJIMjd6TTI4LDExSDI5VjEySDI4ek0yOSwxMUgzMFYxMkgyOXpNMSwxMkgyVjEzSDF6TTMsMTJINFYxM0gzek05LDEySDEwVjEzSDl6TTEwLDEySDExVjEzSDEwek0xMSwxMkgxMlYxM0gxMXpNMTIsMTJIMTNWMTNIMTJ6TTE2LDEySDE3VjEzSDE2ek0xOCwxMkgxOVYxM0gxOHpNMTksMTJIMjBWMTNIMTl6TTIwLDEySDIxVjEzSDIwek0yMSwxMkgyMlYxM0gyMXpNMjMsMTJIMjRWMTNIMjN6TTI1LDEySDI2VjEzSDI1ek0yOCwxMkgyOVYxM0gyOHpNMiwxM0gzVjE0SDJ6TTMsMTNINFYxNEgzek01LDEzSDZWMTRINXpNNiwxM0g3VjE0SDZ6TTcsMTNIOFYxNEg3ek05LDEzSDEwVjE0SDl6TTE3LDEzSDE4VjE0SDE3ek0xOCwxM0gxOVYxNEgxOHpNMTksMTNIMjBWMTRIMTl6TTIxLDEzSDIyVjE0SDIxek0yMywxM0gyNFYxNEgyM3pNMjYsMTNIMjdWMTRIMjZ6TTI4LDEzSDI5VjE0SDI4ek0yOSwxM0gzMFYxNEgyOXpNMSwxNEgyVjE1SDF6TTIsMTRIM1YxNUgyek0zLDE0SDRWMTVIM3pNNCwxNEg1VjE1SDR6TTgsMTRIOVYxNUg4ek05LDE0SDEwVjE1SDl6TTEwLDE0SDExVjE1SDEwek0xMSwxNEgxMlYxNUgxMXpNMTMsMTRIMTRWMTVIMTN6TTE0LDE0SDE1VjE1SDE0ek0xNywxNEgxOFYxNUgxN3pNMjEsMTRIMjJWMTVIMjF6TTIzLDE0SDI0VjE1SDIzek0yNiwxNEgyN1YxNUgyNnpNMjksMTRIMzBWMTVIMjl6TTEsMTVIMlYxNkgxek0yLDE1SDNWMTZIMnpNMywxNUg0VjE2SDN6TTQsMTVINVYxNkg0ek03LDE1SDhWMTZIN3pNOSwxNUgxMFYxNkg5ek0xMywxNUgxNFYxNkgxM3pNMTUsMTVIMTZWMTZIMTV6TTE3LDE1SDE4VjE2SDE3ek0xOCwxNUgxOVYxNkgxOHpNMjIsMTVIMjNWMTZIMjJ6TTIzLDE1SDI0VjE2SDIzek0yNiwxNUgyN1YxNkgyNnpNMjgsMTVIMjlWMTZIMjh6TTI5LDE1SDMwVjE2SDI5ek0xLDE2SDJWMTdIMXpNMywxNkg0VjE3SDN6TTQsMTZINVYxN0g0ek02LDE2SDdWMTdINnpNOSwxNkgxMFYxN0g5ek0xMCwxNkgxMVYxN0gxMHpNMTIsMTZIMTNWMTdIMTJ6TTEzLDE2SDE0VjE3SDEzek0xNCwxNkgxNVYxN0gxNHpNMTUsMTZIMTZWMTdIMTV6TTE3LDE2SDE4VjE3SDE3ek0xOCwxNkgxOVYxN0gxOHpNMjAsMTZIMjFWMTdIMjB6TTIxLDE2SDIyVjE3SDIxek0yNCwxNkgyNVYxN0gyNHpNMjYsMTZIMjdWMTdIMjZ6TTI4LDE2SDI5VjE3SDI4ek0xLDE3SDJWMThIMXpNNCwxN0g1VjE4SDR6TTUsMTdINlYxOEg1ek03LDE3SDhWMThIN3pNMTEsMTdIMTJWMThIMTF6TTEyLDE3SDEzVjE4SDEyek0xNSwxN0gxNlYxOEgxNXpNMTYsMTdIMTdWMThIMTZ6TTE3LDE3SDE4VjE4SDE3ek0xOCwxN0gxOVYxOEgxOHpNMjAsMTdIMjFWMThIMjB6TTIxLDE3SDIyVjE4SDIxek0yMiwxN0gyM1YxOEgyMnpNMjMsMTdIMjRWMThIMjN6TTI0LDE3SDI1VjE4SDI0ek0yNiwxN0gyN1YxOEgyNnpNMjgsMTdIMjlWMThIMjh6TTI5LDE3SDMwVjE4SDI5ek0yLDE4SDNWMTlIMnpNNCwxOEg1VjE5SDR6TTUsMThINlYxOUg1ek05LDE4SDEwVjE5SDl6TTEyLDE4SDEzVjE5SDEyek0xMywxOEgxNFYxOUgxM3pNMTUsMThIMTZWMTlIMTV6TTE4LDE4SDE5VjE5SDE4ek0xOSwxOEgyMFYxOUgxOXpNMjIsMThIMjNWMTlIMjJ6TTIzLDE4SDI0VjE5SDIzek0yNiwxOEgyN1YxOUgyNnpNMjcsMThIMjhWMTlIMjd6TTI5LDE4SDMwVjE5SDI5ek0xLDE5SDJWMjBIMXpNMywxOUg0VjIwSDN6TTQsMTlINVYyMEg0ek03LDE5SDhWMjBIN3pNOSwxOUgxMFYyMEg5ek0xMiwxOUgxM1YyMEgxMnpNMTQsMTlIMTVWMjBIMTR6TTE3LDE5SDE4VjIwSDE3ek0xOCwxOUgxOVYyMEgxOHpNMjEsMTlIMjJWMjBIMjF6TTIyLDE5SDIzVjIwSDIyek0yNSwxOUgyNlYyMEgyNXpNMjgsMTlIMjlWMjBIMjh6TTI5LDE5SDMwVjIwSDI5ek0yLDIwSDNWMjFIMnpNNCwyMEg1VjIxSDR6TTUsMjBINlYyMUg1ek02LDIwSDdWMjFINnpNOSwyMEgxMFYyMUg5ek0xMiwyMEgxM1YyMUgxMnpNMTYsMjBIMTdWMjFIMTZ6TTE3LDIwSDE4VjIxSDE3ek0xOCwyMEgxOVYyMUgxOHpNMjAsMjBIMjFWMjFIMjB6TTIxLDIwSDIyVjIxSDIxek0yMywyMEgyNFYyMUgyM3pNMjQsMjBIMjVWMjFIMjR6TTI1LDIwSDI2VjIxSDI1ek0yNiwyMEgyN1YyMUgyNnpNMjgsMjBIMjlWMjFIMjh6TTEsMjFIMlYyMkgxek0zLDIxSDRWMjJIM3pNNCwyMUg1VjIySDR6TTYsMjFIN1YyMkg2ek03LDIxSDhWMjJIN3pNMTEsMjFIMTJWMjJIMTF6TTEyLDIxSDEzVjIySDEyek0xNiwyMUgxN1YyMkgxNnpNMTcsMjFIMThWMjJIMTd6TTE4LDIxSDE5VjIySDE4ek0yMSwyMUgyMlYyMkgyMXpNMjIsMjFIMjNWMjJIMjJ6TTIzLDIxSDI0VjIySDIzek0yNCwyMUgyNVYyMkgyNHpNMjUsMjFIMjZWMjJIMjV6TTksMjJIMTBWMjNIOXpNMTQsMjJIMTVWMjNIMTR6TTE3LDIySDE4VjIzSDE3ek0xOCwyMkgxOVYyM0gxOHpNMjEsMjJIMjJWMjNIMjF6TTI1LDIySDI2VjIzSDI1ek0yNywyMkgyOFYyM0gyN3pNMjgsMjJIMjlWMjNIMjh6TTI5LDIySDMwVjIzSDI5ek0xLDIzSDJWMjRIMXpNMiwyM0gzVjI0SDJ6TTMsMjNINFYyNEgzek00LDIzSDVWMjRINHpNNSwyM0g2VjI0SDV6TTYsMjNIN1YyNEg2ek03LDIzSDhWMjRIN3pNMTEsMjNIMTJWMjRIMTF6TTE1LDIzSDE2VjI0SDE1ek0yMCwyM0gyMVYyNEgyMHpNMjEsMjNIMjJWMjRIMjF6TTIzLDIzSDI0VjI0SDIzek0yNSwyM0gyNlYyNEgyNXpNMjYsMjNIMjdWMjRIMjZ6TTI4LDIzSDI5VjI0SDI4ek0yOSwyM0gzMFYyNEgyOXpNMSwyNEgyVjI1SDF6TTcsMjRIOFYyNUg3ek0xMCwyNEgxMVYyNUgxMHpNMTMsMjRIMTRWMjVIMTN6TTE0LDI0SDE1VjI1SDE0ek0xNSwyNEgxNlYyNUgxNXpNMTYsMjRIMTdWMjVIMTZ6TTE3LDI0SDE4VjI1SDE3ek0xOCwyNEgxOVYyNUgxOHpNMTksMjRIMjBWMjVIMTl6TTIxLDI0SDIyVjI1SDIxek0yNSwyNEgyNlYyNUgyNXpNMjYsMjRIMjdWMjVIMjZ6TTI4LDI0SDI5VjI1SDI4ek0xLDI1SDJWMjZIMXpNMywyNUg0VjI2SDN6TTQsMjVINVYyNkg0ek01LDI1SDZWMjZINXpNNywyNUg4VjI2SDd6TTksMjVIMTBWMjZIOXpNMTAsMjVIMTFWMjZIMTB6TTEyLDI1SDEzVjI2SDEyek0xNSwyNUgxNlYyNkgxNXpNMTcsMjVIMThWMjZIMTd6TTE4LDI1SDE5VjI2SDE4ek0yMSwyNUgyMlYyNkgyMXpNMjIsMjVIMjNWMjZIMjJ6TTIzLDI1SDI0VjI2SDIzek0yNCwyNUgyNVYyNkgyNHpNMjUsMjVIMjZWMjZIMjV6TTI4LDI1SDI5VjI2SDI4ek0yOSwyNUgzMFYyNkgyOXpNMSwyNkgyVjI3SDF6TTMsMjZINFYyN0gzek00LDI2SDVWMjdINHpNNSwyNkg2VjI3SDV6TTcsMjZIOFYyN0g3ek0xMCwyNkgxMVYyN0gxMHpNMTEsMjZIMTJWMjdIMTF6TTEyLDI2SDEzVjI3SDEyek0xNCwyNkgxNVYyN0gxNHpNMTUsMjZIMTZWMjdIMTV6TTE3LDI2SDE4VjI3SDE3ek0xOCwyNkgxOVYyN0gxOHpNMTksMjZIMjBWMjdIMTl6TTI0LDI2SDI1VjI3SDI0ek0yNSwyNkgyNlYyN0gyNXpNMjcsMjZIMjhWMjdIMjd6TTI4LDI2SDI5VjI3SDI4ek0yOSwyNkgzMFYyN0gyOXpNMSwyN0gyVjI4SDF6TTMsMjdINFYyOEgzek00LDI3SDVWMjhINHpNNSwyN0g2VjI4SDV6TTcsMjdIOFYyOEg3ek05LDI3SDEwVjI4SDl6TTEwLDI3SDExVjI4SDEwek0xMiwyN0gxM1YyOEgxMnpNMTUsMjdIMTZWMjhIMTV6TTE4LDI3SDE5VjI4SDE4ek0xOSwyN0gyMFYyOEgxOXpNMjQsMjdIMjVWMjhIMjR6TTI1LDI3SDI2VjI4SDI1ek0yNiwyN0gyN1YyOEgyNnpNMjksMjdIMzBWMjhIMjl6TTEsMjhIMlYyOUgxek03LDI4SDhWMjlIN3pNMTEsMjhIMTJWMjlIMTF6TTEyLDI4SDEzVjI5SDEyek0xMywyOEgxNFYyOUgxM3pNMTgsMjhIMTlWMjlIMTh6TTIwLDI4SDIxVjI5SDIwek0yMSwyOEgyMlYyOUgyMXpNMjMsMjhIMjRWMjlIMjN6TTI0LDI4SDI1VjI5SDI0ek0yOCwyOEgyOVYyOUgyOHpNMSwyOUgyVjMwSDF6TTIsMjlIM1YzMEgyek0zLDI5SDRWMzBIM3pNNCwyOUg1VjMwSDR6TTUsMjlINlYzMEg1ek02LDI5SDdWMzBINnpNNywyOUg4VjMwSDd6TTksMjlIMTBWMzBIOXpNMTMsMjlIMTRWMzBIMTN6TTE3LDI5SDE4VjMwSDE3ek0xOCwyOUgxOVYzMEgxOHpNMjAsMjlIMjFWMzBIMjB6TTIxLDI5SDIyVjMwSDIxek0yNCwyOUgyNVYzMEgyNHpNMjUsMjlIMjZWMzBIMjV6TTI2LDI5SDI3VjMwSDI2ek0yOCwyOUgyOVYzMEgyOHpNMjksMjlIMzBWMzBIMjl6IiBpZD0icXItcGF0aCIgZmlsbD0iIzAwMDAwMCIgZmlsbC1vcGFjaXR5PSIxIiBmaWxsLXJ1bGU9Im5vbnplcm8iIHN0cm9rZT0ibm9uZSIvPjwvc3ZnPg==" width="220" height="220" alt="Scan to install THROW" style="display:block;border-radius:6px" />
+    </div>
+    <div class="install-steps">
+      <div class="install-step"><span class="step-num">1</span>Scan QR with camera</div>
+      <div class="install-step"><span class="step-num">2</span>Open link in browser</div>
+      <div class="install-step ios-step"><span class="step-num">3</span>iOS: tap Share → <strong>Add to Home Screen</strong></div>
+      <div class="install-step android-step"><span class="step-num">4</span>Android: tap menu → <strong>Install App</strong></div>
+    </div>
+    <button class="btn-share-x" id="btn-install-share-x">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+      Share on X
+    </button>
+    <button class="btn-ghost install-anyway" id="btn-install-anyway">Continue on this device</button>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: FIRST SCAN (PWA first launch — scan friend QR to get wallet) ═ -->
+<div id="screen-first-scan" class="screen">
+  <div class="first-scan-inner">
+    <div class="first-scan-top">
+      <div class="wordmark" style="font-size:1.4rem">THROW</div>
+      <div class="first-scan-title">Scan your friend's screen<br/>to get your wallet</div>
+    </div>
+    <div class="first-scan-camera-wrap">
+      <video id="first-scan-video" class="first-scan-video" autoplay playsinline></video>
+      <canvas id="first-scan-canvas" class="first-scan-canvas"></canvas>
+      <div class="first-scan-reticle">
+        <div class="reticle-corner tl"></div>
+        <div class="reticle-corner tr"></div>
+        <div class="reticle-corner bl"></div>
+        <div class="reticle-corner br"></div>
+      </div>
+    </div>
+    <div class="first-scan-status" id="first-scan-status"></div>
+    <button class="btn-primary" id="btn-first-scan-start" style="margin-top:12px">Tap to Open Camera</button>
+    <button class="btn-ghost" id="btn-first-scan-manual">Create my own wallet instead</button>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: INSTALL FIRST (browser only) ══════════════════════════════ -->
+<div id="screen-install-first" class="screen">
+  <div class="install-first-inner">
+    <img src="icon-512.png" class="splash-icon" alt="THROW" />
+    <h1 class="wordmark">THROW</h1>
+    <p class="install-first-sub" id="install-first-sub">Your friend is sending you a hot wallet. Add THROW to your home screen to receive it.</p>
+
+    <div class="install-steps-visual">
+      <div class="install-step-row">
+        <div class="install-step-num">1</div>
+        <div class="install-step-text">Tap the <strong>Share</strong> button at the bottom of your screen</div>
+        <div class="install-step-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+        </div>
+      </div>
+      <div class="install-step-divider"></div>
+      <div class="install-step-row">
+        <div class="install-step-num">2</div>
+        <div class="install-step-text">Scroll down and tap <strong>Add to Home Screen</strong></div>
+        <div class="install-step-icon">&#43;</div>
+      </div>
+      <div class="install-step-divider"></div>
+      <div class="install-step-row">
+        <div class="install-step-num">3</div>
+        <div class="install-step-text">Open THROW from your home screen — your wallet will be ready</div>
+        <div class="install-step-icon">
+          <img src="icon-192.png" width="28" height="28" style="border-radius:6px" />
+        </div>
+      </div>
+    </div>
+
+    <p class="install-first-note">Already installed? Tap below.</p>
+    <button class="btn-primary" id="btn-already-installed">I Added It — Open Wallet ✓</button>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: WALLET SETUP ═══════════════════════════════════════════════ -->
+<div id="screen-setup" class="screen">
+  <div class="setup-inner">
+    <img src="icon-512.png" class="splash-icon" alt="THROW" />
+    <h1 class="wordmark">THROW</h1>
+    <p class="setup-sub">Digital cash. No login.<br/>Throw it like you mean it.</p>
+
+    <div class="wallet-options" id="setup-choice">
+      <button class="btn-primary" id="btn-invited-by-friend" style="font-size:1rem;padding:16px 0;">A friend invited me</button>
+      <button class="btn-ghost" id="btn-just-me" style="font-size:1rem;padding:14px 0;">Just me — create my wallet</button>
+    </div>
+
+    <div id="setup-solo" class="hidden">
+      <div class="handle-input-wrap" style="margin-top:16px">
+        <input class="handle-input" id="handle-input" type="text" maxlength="6" placeholder="YOUR NAME" autocomplete="off" spellcheck="false" />
+        <div class="handle-input-hint">Up to 6 letters — this is how friends see you</div>
+      </div>
+      <div class="wallet-options">
+        <button class="btn-primary" id="btn-new-wallet">Create Wallet</button>
+        <button class="btn-ghost" id="btn-import-wallet">Import Key</button>
+      </div>
+      <div id="import-area" class="import-area hidden">
+        <textarea id="import-key" placeholder="Paste private key..." rows="3"></textarea>
+        <button class="btn-primary" id="btn-confirm-import">Load Wallet</button>
+      </div>
+      <p class="setup-disclaimer">Your key lives on this device only.<br/>Lose your phone, lose your cash. Just like real money.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: SAVE KEY (shown once after wallet creation) ════════════════ -->
+<div id="screen-save-key" class="screen hidden">
+  <div class="save-key-inner">
+    <div class="save-key-icon">🔑</div>
+    <div class="screen-label">SAVE YOUR KEY</div>
+    <p class="save-key-sub">This is the only way to recover your wallet if you add THROW to your home screen or switch browsers. Screenshot it or copy it now.</p>
+    <div class="backup-key-box" id="new-wallet-pk-display" style="width:100%;max-width:320px"></div>
+    <button class="btn-primary" id="btn-copy-new-pk">Copy Key</button>
+    <p class="save-key-hint">You can always find this key again by tapping <strong>ADD CASH</strong> → scroll down.</p>
+    <button class="btn-primary" id="btn-save-key-done" style="margin-top:8px">I Saved It — Continue</button>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: MERCHANT SETUP ══════════════════════════════════════════════════ -->
+<div id="screen-merchant-setup" class="screen">
+  <div class="merchant-setup-inner">
+    <h2 class="merchant-setup-title">Set Up Your Register</h2>
+    <p class="merchant-setup-sub">Name your business and add items. Prices are in $5 increments.</p>
+    <div class="field-group">
+      <label class="field-label">Business Name</label>
+      <input id="merchant-biz-name" class="field-input" type="text" placeholder="Corner Store, Bar Tab, Food Truck..." maxlength="32" />
+    </div>
+    <div class="field-group">
+      <label class="field-label">Menu Items <span class="field-hint">(optional)</span></label>
+      <div id="merchant-items-list" class="merchant-items-list"></div>
+      <button class="btn-ghost btn-add-item" id="btn-add-item">+ Add Item</button>
+    </div>
+    <div id="add-item-form" class="add-item-form hidden">
+      <input id="new-item-name" class="field-input" type="text" placeholder="Item name (e.g. Red Bull)" maxlength="24" />
+      <div class="price-select-row">
+        <label class="field-label">Price</label>
+        <select id="new-item-price" class="field-select">
+          <option value="5">$5</option>
+          <option value="10">$10</option>
+          <option value="15">$15</option>
+          <option value="20">$20</option>
+          <option value="25">$25</option>
+          <option value="30">$30</option>
+          <option value="50">$50</option>
+        </select>
+      </div>
+      <button class="btn-primary" id="btn-save-item">Add to Menu</button>
+    </div>
+    <button class="btn-primary merchant-open-btn" id="btn-merchant-open">Open Register</button>
+    <p class="setup-disclaimer">$0.10 THROW fee per transaction. You set your prices.</p>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: MERCHANT DASHBOARD ═════════════════════════════════════════════════ -->
+<div id="screen-merchant" class="screen">
+  <div class="merchant-top-bar">
+    <div class="merchant-biz-display" id="merchant-biz-display">YOUR STORE</div>
+    <div class="merchant-addr" id="merchant-addr-display">••••0000</div>
+    <button class="icon-btn" id="btn-merchant-menu-toggle" aria-label="Menu">&#9776;</button>
+  </div>
+  <div class="merchant-balance-section">
+    <div class="balance-label">TODAY'S THROWS</div>
+    <div class="merchant-total" id="merchant-total-display">$0.00</div>
+    <div class="merchant-throw-count" id="merchant-throw-count">0 throws received</div>
+  </div>
+  <div class="merchant-menu" id="merchant-menu"></div>
+  <button class="btn-primary merchant-qr-btn" id="btn-merchant-show-qr">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/></svg>
+    Show My QR
+  </button>
+  <div id="merchant-qr-panel" class="merchant-qr-panel hidden">
+    <p class="merchant-qr-label" id="merchant-qr-label">Customer scans to throw</p>
+    <canvas id="merchant-qr-canvas" class="merchant-qr-canvas"></canvas>
+    <button class="btn-ghost" id="btn-merchant-qr-close">Close</button>
+  </div>
+  <div class="merchant-feed" id="merchant-feed">
+    <div class="feed-empty" id="merchant-feed-empty">Waiting for first throw…</div>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: MAIN WALLET ══════════════════════════════════════════════════ -->
+<div id="screen-wallet" class="screen">
+  <div class="top-bar">
+    <button class="icon-btn" id="btn-history" aria-label="History">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    </button>
+    <div class="wallet-handle" id="wallet-handle-display">THROW</div>
+    <button class="icon-btn" id="btn-qr-receive" aria-label="Receive">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/></svg>
+    </button>
+  </div>
+
+  <!-- Tempo Points badge -->
+  <button id="tempo-points-badge" class="tempo-points-badge">
+    &#x26A1; Earn Tempo Points
+  </button>
+
+  <!-- Crew avatars (known contacts) -->
+  <div class="crew-row" id="crew-row"></div>
+
+  <div class="balance-section">
+    <div class="balance-label">YOUR STACK</div>
+    <div class="balance-amount" id="balance-display">$0.00</div>
+    <div class="balance-tokens" id="balance-tokens"></div>
+    <div class="cap-bar-wrap">
+      <div class="cap-bar-track"><div class="cap-bar-fill" id="cap-bar-fill"></div></div>
+      <span class="cap-label" id="cap-label">$0 of $50</span>
+    </div>
+  </div>
+
+  <div class="action-grid">
+    <button class="action-card" id="btn-throw">
+      <div class="action-icon">
+        <!-- Arrow pointing straight up / away -->
+        <svg viewBox="0 0 40 40" fill="none">
+          <line x1="20" y1="34" x2="20" y2="8" stroke="white" stroke-width="3" stroke-linecap="round"/>
+          <path d="M12 16 L20 6 L28 16" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+      <span>THROW</span>
+    </button>
+    <button class="action-card" id="btn-catch">
+      <div class="action-icon">
+        <!-- Arrow pointing straight down / toward holder -->
+        <svg viewBox="0 0 40 40" fill="none">
+          <line x1="20" y1="6" x2="20" y2="32" stroke="white" stroke-width="3" stroke-linecap="round"/>
+          <path d="M12 24 L20 34 L28 24" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+      <span>CATCH</span>
+    </button>
+    <button class="action-card" id="btn-dock">
+      <div class="action-icon">
+        <svg viewBox="0 0 40 40" fill="none"><path d="M20 8v24M8 20h24" stroke="white" stroke-width="3" stroke-linecap="round"/><circle cx="20" cy="20" r="13" stroke="white" stroke-width="2"/></svg>
+      </div>
+      <span>ADD FRIEND</span>
+    </button>
+    <button class="action-card action-wide" id="btn-open-bet">
+      <div class="action-icon">
+        <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="13" stroke="white" stroke-width="2.5"/><circle cx="20" cy="20" r="4" fill="white"/><path d="M20 7 L20 11M20 29 L20 33M7 20 L11 20M29 20 L33 20" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
+      </div>
+      <span>OPEN BET</span>
+    </button>
+  </div>
+
+  <button class="load-btn" id="btn-load-cash">
+    💸 ADD CASH TO WALLET
+  </button>
+
+  <div class="hot-wallet-notice">
+    <div class="hot-wallet-title">&#x26A0;&#xFE0F; OPEN WALLET — READ THIS</div>
+    <div class="hot-wallet-body">This wallet has no password and no recovery. Your private key is the only backup — tap the QR icon above to see and copy it. Max $50. Treat it like cash: if you lose your phone or clear your browser, the money is gone. Never put more than you'd hand a stranger.</div>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: DOCK ═══════════════════════════════════════════════════ -->
+<div id="screen-dock" class="screen">
+  <button class="back-btn" id="dock-back">← Back</button>
+  <div class="dock-ui">
+    <div class="screen-label">ADD FRIEND</div>
+
+    <!-- Tab: Friend has no app -->
+    <div class="dock-tabs">
+      <button class="dock-tab active" id="dock-tab-new" data-tab="new">No App Yet</button>
+      <button class="dock-tab" id="dock-tab-existing" data-tab="existing">Has App</button>
+    </div>
+
+    <!-- Panel: No app — gift a wallet -->
+    <div class="dock-panel active" id="dock-panel-new">
+      <!-- QR shown at top once generated -->
+      <div class="dock-gift-qr hidden" id="dock-gift-qr">
+        <div class="dock-gift-label">Show this to <span id="dock-gift-name">them</span></div>
+        <canvas id="dock-gift-canvas" width="240" height="240"></canvas>
+        <div class="dock-gift-hint">They scan → tap “A friend invited me” → scan again → wallet ready</div>
+        <div class="dock-gift-addr" id="dock-gift-addr"></div>
+      </div>
+      <!-- Input + button shown before QR is generated -->
+      <div id="dock-gift-form">
+        <p class="dock-hint">Enter their name — we'll create a wallet for them. They scan your QR and they're in.</p>
+        <input class="handle-input" id="dock-friend-name" type="text" maxlength="6" placeholder="THEIR NAME" autocomplete="off" />
+        <button class="btn-primary" id="btn-dock-gift">Create &amp; Show QR</button>
+      </div>
+    </div>
+
+    <!-- Panel: Has app — scan their CATCH QR -->
+    <div class="dock-panel" id="dock-panel-existing">
+      <p class="dock-hint">Ask them to open THROW and tap CATCH. Then scan their QR below.</p>
+      <button class="btn-primary" id="btn-dock-scan">Scan Their QR</button>
+      <video class="dock-scanner hidden" id="dock-scanner" autoplay playsinline></video>
+      <canvas class="dock-scanner-canvas hidden" id="dock-scanner-canvas"></canvas>
+      <div class="dock-scan-status" id="dock-scan-status"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: THROW ════════════════════════════════════════════════════════ -->
+<div id="screen-throw" class="screen">
+  <button class="back-btn" id="throw-back">← Back</button>
+  <div class="throw-ui">
+    <div class="screen-label">THROW CASH</div>
+
+    <div class="amount-display" id="throw-amount-display">$5</div>
+    <div class="quick-amounts quick-amounts-grid">
+      <button class="qbtn" data-amount="1">$1</button>
+      <button class="qbtn active" data-amount="5">$5</button>
+      <button class="qbtn" data-amount="10">$10</button>
+      <button class="qbtn" data-amount="15">$15</button>
+      <button class="qbtn" data-amount="20">$20</button>
+      <button class="qbtn" data-amount="25">$25</button>
+      <button class="qbtn" data-amount="30">$30</button>
+      <button class="qbtn" data-amount="35">$35</button>
+      <button class="qbtn" data-amount="40">$40</button>
+      <button class="qbtn" data-amount="45">$45</button>
+      <button class="qbtn" data-amount="50">$50</button>
+    </div>
+    <div class="throw-fee-line" id="throw-fee-line">$0.15 fee — recipient gets $4.85</div>
+
+    <!-- Throw button (room mode) -->
+    <div class="throw-action-area" id="throw-action-area">
+      <div class="gesture-zone" id="gesture-zone">
+        <div class="gesture-ring" id="gesture-ring"></div>
+        <div class="gesture-hint">Hold + flick to throw</div>
+      </div>
+      <button class="make-it-rain-btn hidden" id="btn-make-it-rain">
+        💸 Make It Rain (split to all)
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: CATCH ════════════════════════════════════════════════════════ -->
+<div id="screen-catch" class="screen">
+  <button class="back-btn" id="catch-back">← Back</button>
+  <div class="catch-ui">
+    <div class="screen-label">READY TO CATCH</div>
+    <div class="catch-orb" id="catch-orb">
+      <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+    </div>
+    <div class="catch-status" id="catch-status">Listening for incoming…</div>
+    <div class="method-tabs">
+      <button class="mtab active" data-catchmethod="gesture">Gesture</button>
+      <button class="mtab" data-catchmethod="nfc">Dock</button>
+      <button class="mtab" data-catchmethod="sonic">Sonic</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: OPEN BET (HOST SETUP) ═══════════════════════════════════════ -->
+<div id="screen-bet-setup" class="screen">
+  <button class="back-btn" id="bet-setup-back">← Back</button>
+  <div class="bet-setup-ui">
+    <div class="screen-label">OPEN A BET</div>
+
+    <input id="bet-description" class="bet-input" type="text"
+      placeholder="LeBron dunks before he shoots…" maxlength="80" />
+
+    <div class="field-label">AMOUNT PER PLAYER</div>
+    <div class="quick-amounts">
+      <button class="qbtn active" data-betamt="5">$5</button>
+      <button class="qbtn" data-betamt="10">$10</button>
+      <button class="qbtn" data-betamt="15">$15</button>
+      <button class="qbtn" data-betamt="20">$20</button>
+      <button class="qbtn" data-betamt="25">$25</button>
+      <button class="qbtn" data-betamt="30">$30</button>
+      <button class="qbtn" data-betamt="50">$50</button>
+    </div>
+    <div class="fee-notice">$0.10 service fee per throw &mdash; players put in $4.90, $9.90, etc.</div>
+
+    <div class="field-label">PAYOUT</div>
+    <div class="structure-list">
+      <button class="structure-card active" data-struct="winner-all">
+        <div class="struct-name">WINNER TAKES ALL</div>
+        <div class="struct-desc">You win → keep the pot &nbsp;|&nbsp; You lose → they split it</div>
+      </button>
+      <button class="structure-card" data-struct="flip">
+        <div class="struct-name">THE FLIP</div>
+        <div class="struct-desc">You win → double your stake &nbsp;|&nbsp; You lose → they split yours</div>
+      </button>
+      <button class="structure-card" data-struct="round-robin">
+        <div class="struct-name">ROUND ROBIN</div>
+        <div class="struct-desc">Pick sides &nbsp;|&nbsp; Losers pay winners proportionally</div>
+      </button>
+    </div>
+
+    <button class="btn-primary" id="btn-start-pot">Open the Pot</button>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: ACTIVE POT (HOST) ════════════════════════════════════════════ -->
+<div id="screen-pot" class="screen">
+  <div class="pot-ui">
+    <div class="pot-bet-text" id="pot-bet-text"></div>
+    <div class="pot-struct-badge" id="pot-struct-badge"></div>
+
+    <!-- The glowing pot that fills as throws land -->
+    <div class="pot-orb" id="pot-orb">
+      <div class="pot-ring r1"></div>
+      <div class="pot-ring r2"></div>
+      <div class="pot-ring r3"></div>
+      <div class="pot-center">
+        <div class="pot-total" id="pot-total">$0</div>
+        <div class="pot-sublabel">IN THE POT</div>
+      </div>
+    </div>
+
+    <!-- Players throwing in — appear as they land -->
+    <div class="pot-players" id="pot-players"></div>
+
+    <div class="settle-row">
+      <button class="settle-btn win" id="btn-win">🏆 I WAS RIGHT</button>
+      <button class="settle-btn lose" id="btn-lose">❌ I WAS WRONG</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: PLAYER IN BET ════════════════════════════════════════════════ -->
+<div id="screen-player-bet" class="screen">
+  <div class="player-bet-ui">
+    <div class="screen-label">ACTIVE BET</div>
+    <div class="player-bet-desc" id="player-bet-desc"></div>
+    <div class="player-bet-amount" id="player-bet-amount"></div>
+    <div class="player-bet-status" id="player-bet-status">Throw your money at the host phone</div>
+
+    <!-- Mini throw zone for the bet -->
+    <div class="bet-throw-zone" id="bet-throw-zone">
+      <div class="bet-throw-ring" id="bet-throw-ring"></div>
+      <div class="gesture-hint">Hold + flick at host</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: SETTLED ══════════════════════════════════════════════════════ -->
+<div id="screen-settled" class="screen">
+  <div class="settled-ui">
+    <div class="settled-result" id="settled-result"></div>
+    <div class="settled-breakdown" id="settled-breakdown"></div>
+    <button class="btn-primary" id="btn-new-bet">New Bet</button>
+    <button class="btn-share-x" id="btn-share-x">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+      Post on X
+    </button>
+    <button class="btn-ghost" id="btn-settled-home">Back to Wallet</button>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: RECEIVE QR ═══════════════════════════════════════════════════ -->
+<div id="screen-qr" class="screen">
+  <button class="back-btn" id="qr-back">← Back</button>
+  <div class="qr-ui">
+    <div class="screen-label">ADD CASH</div>
+
+    <canvas id="qr-canvas" width="160" height="160"></canvas>
+    <div class="qr-address" id="qr-address"></div>
+
+    <button class="btn-primary fund-step-btn" id="btn-copy-addr">
+      1 — COPY MY WALLET ADDRESS
+    </button>
+    <div class="fund-copied-toast hidden" id="fund-copied-toast">✓ Copied! Now tap below to open Tempo</div>
+
+    <button class="tempo-wallet-btn" id="btn-open-tempo">
+      2 — GO TO TEMPO WALLET
+      <span class="tempo-wallet-sub">Buy USDC.e → Send → Paste your address → Done</span>
+    </button>
+
+    <div class="backup-key-section">
+      <div class="backup-key-label">BACKUP KEY — screenshot this to recover your wallet</div>
+      <div class="backup-key-box" id="backup-key-display">loading...</div>
+      <button class="btn-ghost" id="btn-copy-pk">Copy Backup Key</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══ OVERLAY: TX FLASH ════════════════════════════════════════════════════ -->
+<!-- ═══ OVERLAY: TEMPO POINTS ════════════════════════════════════════════ -->
+<div id="points-modal" class="points-modal hidden">
+  <div class="points-modal-inner">
+    <button class="back-btn" id="points-modal-close">← Back</button>
+    <div class="points-header">
+      <div class="points-lightning">⚡</div>
+      <div class="points-title">TEMPO POINTS</div>
+    </div>
+    <div class="points-stat" id="points-stat-throws">0 throws</div>
+    <div class="points-stat-label">this session</div>
+    <div class="points-explainer">
+      Every throw you make is recorded on Tempo's blockchain — backed by Stripe &amp; Paradigm.
+      Tempo has not yet issued a token. Early on-chain activity is typically rewarded in ecosystem airdrops.
+      <strong>Your wallet is building history right now.</strong>
+    </div>
+    <div class="points-disclaimer">
+      THROW makes no guarantee of any airdrop or token reward. Informational only.
+    </div>
+  </div>
+</div>
+
+<!-- ═══ OVERLAY: CONTACT THROW ══════════════════════════════════════════════ -->
+<div id="contact-overlay" class="contact-overlay hidden">
+  <div class="contact-overlay-inner">
+    <button class="contact-overlay-close" id="contact-overlay-close">✕</button>
+    <div class="contact-overlay-avatar" id="contact-overlay-avatar">?</div>
+    <div class="contact-overlay-name" id="contact-overlay-name">FRIEND</div>
+    <div class="contact-overlay-addr" id="contact-overlay-addr"></div>
+    <div class="contact-overlay-amounts">
+      <button class="qbtn" data-camount="1">$1</button>
+      <button class="qbtn active" data-camount="5">$5</button>
+      <button class="qbtn" data-camount="10">$10</button>
+      <button class="qbtn" data-camount="15">$15</button>
+      <button class="qbtn" data-camount="20">$20</button>
+      <button class="qbtn" data-camount="25">$25</button>
+      <button class="qbtn" data-camount="50">$50</button>
+    </div>
+    <div class="contact-fee-line" id="contact-fee-line">$0.15 fee — they get $4.85</div>
+    <div class="contact-throw-methods">
+      <div class="contact-throw-method-row">
+        <!-- Gesture -->
+        <div class="contact-overlay-gesture" id="contact-gesture-zone">
+          <div class="gesture-ring"></div>
+          <div class="gesture-hint" id="contact-gesture-hint">Hold + flick</div>
+        </div>
+        <!-- NFC -->
+        <button class="contact-method-btn" id="btn-contact-nfc" title="NFC tap">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12C2 6.48 6.48 2 12 2s10 4.48 10 10-4.48 10-10 10S2 17.52 2 12z"/><path d="M8 12a4 4 0 0 1 4-4"/><path d="M12 16a4 4 0 0 0 4-4"/></svg>
+          <span>NFC</span>
+        </button>
+        <!-- Sonic -->
+        <button class="contact-method-btn" id="btn-contact-sonic" title="Sonic send">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l12-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <span>Sonic</span>
+        </button>
+      </div>
+    </div>
+    <div class="contact-overlay-actions">
+      <button class="btn-ghost" id="btn-contact-bet">OPEN BET</button>
+    </div>
+    <button class="btn-delete-contact" id="btn-contact-delete">Remove contact</button>
+  </div>
+</div>
+
+<div id="tx-flash" class="tx-flash hidden">
+  <div class="tx-inner">
+    <div class="tx-icon" id="tx-icon"></div>
+    <div class="tx-amount" id="tx-amount"></div>
+    <div class="tx-label" id="tx-label"></div>
+  </div>
+</div>
+
+<!-- ═══ OVERLAY: BILL ANIMATION ═════════════════════════════════════════════ -->
+<div id="throw-anim" class="throw-anim hidden" aria-hidden="true">
+  <div class="money-bill" id="money-bill">💵</div>
+</div>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      reg.addEventListener('updatefound', () => {
+        const sw = reg.installing;
+        sw.addEventListener('statechange', () => {
+          if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+            // New version ready — reload to apply
+            window.location.reload();
+          }
+        });
+      });
+    });
+  }
+</script>
+<script src="qrcode.min.js"></script>
+<script src="jsqr.min.js"></script>
+<script src="viem.bundle.js"></script>
+<script src="mqtt.min.js"></script>
+<script src="room.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
