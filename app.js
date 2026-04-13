@@ -972,6 +972,8 @@ function openCatchScreen() {
   setupCatchScreen();
 }
 
+let _catchPollInterval = null;
+
 function setupCatchScreen() {
   const orb    = document.getElementById('catch-orb');
   const status = document.getElementById('catch-status');
@@ -987,6 +989,20 @@ function setupCatchScreen() {
   }
 
   orb.classList.add('live');
+
+  // Poll chain every 3s while on catch screen — detects real on-chain arrival
+  // (BroadcastChannel only works same-device; this handles cross-device throws)
+  if (_catchPollInterval) clearInterval(_catchPollInterval);
+  const startBal = state.total;
+  _catchPollInterval = setInterval(async () => {
+    if (currentScreen !== 'catch') { clearInterval(_catchPollInterval); _catchPollInterval = null; return; }
+    await refreshBalances();
+    if (state.total > startBal + 0.005) {
+      clearInterval(_catchPollInterval); _catchPollInterval = null;
+      const received = (state.total - startBal).toFixed(2);
+      onMoneyReceived(parseFloat(received), 'on-chain');
+    }
+  }, 3000);
 
   // Listen for method tabs
   document.querySelectorAll('.catch-ui .mtab').forEach(t => {
@@ -1601,10 +1617,12 @@ function initContactOverlay() {
           touchContact(target.addr);
           points.add(amount);
           showTxFlash('✅', '$' + amount, 'Thrown to ' + target.name + '!');
-          setTimeout(() => showScreen('wallet'), 1800);
+          await refreshBalances();
+          setTimeout(() => { hideTxFlash(); showScreen('wallet'); }, 1800);
         } catch(e) {
           hideTxFlash();
           alert('Throw failed: ' + e.message);
+          showScreen('wallet');
         }
       });
     }).catch(() => { cgHint.textContent = 'Motion blocked — tap Allow'; });
@@ -1641,8 +1659,9 @@ function initContactOverlay() {
         touchContact(target.addr);
         points.add(amount);
         showTxFlash('✅', '$' + amount, 'Thrown to ' + target.name + '!');
-        setTimeout(() => showScreen('wallet'), 1800);
-      } catch(e) { hideTxFlash(); alert('Throw failed: ' + e.message); }
+        await refreshBalances();
+        setTimeout(() => { hideTxFlash(); showScreen('wallet'); }, 1800);
+      } catch(e) { hideTxFlash(); alert('Throw failed: ' + e.message); showScreen('wallet'); }
     };
   }
 
@@ -1663,8 +1682,9 @@ function initContactOverlay() {
         touchContact(target.addr);
         points.add(amount);
         showTxFlash('✅', '$' + amount, 'Thrown to ' + target.name + '!');
-        setTimeout(() => showScreen('wallet'), 1800);
-      } catch(e) { hideTxFlash(); alert('Throw failed: ' + e.message); }
+        await refreshBalances();
+        setTimeout(() => { hideTxFlash(); showScreen('wallet'); }, 1800);
+      } catch(e) { hideTxFlash(); alert('Throw failed: ' + e.message); showScreen('wallet'); }
     };
   }
 
@@ -2052,6 +2072,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('catch-back').onclick = () => {
     stopSonicListen();
     stopNFC();
+    if (_catchPollInterval) { clearInterval(_catchPollInterval); _catchPollInterval = null; }
     showScreen('wallet');
   };
 
