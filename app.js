@@ -2639,6 +2639,9 @@ async function settleBet(hostWon) {
     showSettledScreen(hostWon, pot, results);
     state.bet.active = false;
 
+    // Auto-refill agent wallets if needed — non-blocking, best-effort
+    fetch('/api/refill-agents', { method: 'POST' }).catch(() => {});
+
   } catch (e) {
     hideTxFlash();
     // Always clear the retained global bet so scanners stop glowing — even on failure
