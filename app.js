@@ -2354,6 +2354,16 @@ async function startPot() {
   clearPendingBetButton();
   if (_betScanTimer) { clearTimeout(_betScanTimer); _betScanTimer = null; }
 
+  // Demo: deduct host stake immediately and seed pot display
+  if (DEMO_MODE) {
+    const stake = state.bet.amountPer;
+    state.total   = Math.max(0, state.total - stake);
+    state.pathUSD = state.total;
+    try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
+    renderWalletUI();
+    addPlayerToPot(state.account.address, 'You (host)', stake, 'yes');
+  }
+
   showScreen('pot');
   renderPotScreen();
 }
@@ -2502,13 +2512,17 @@ async function settleBet(hostWon) {
         return Promise.resolve();
       };
 
+      // Exclude host from player payout list (host added to players for pot display only)
+      const nonHostPlayers = players.filter(p => p.addr.toLowerCase() !== hostAddr.toLowerCase());
+      const payoutPlayers  = nonHostPlayers.length > 0 ? nonHostPlayers : players;
+
       if (state.bet.structure === 'winner-all') {
         if (hostWon) {
           await payTo(hostAddr, pot);
           results = [{ addr: hostAddr, amount: pot, type: 'win' }];
         } else {
-          const share = pot / (players.length || 1);
-          for (const p of players) {
+          const share = pot / (payoutPlayers.length || 1);
+          for (const p of payoutPlayers) {
             await payTo(p.addr, share);
             results.push({ addr: p.addr, amount: share, type: 'win' });
           }
@@ -2519,8 +2533,8 @@ async function settleBet(hostWon) {
           await payTo(hostAddr, Math.min(hostStake * 2, pot));
           results = [{ addr: hostAddr, amount: Math.min(hostStake * 2, pot), type: 'win' }];
         } else {
-          const share = Math.min(state.bet.amountPer * 2, pot / (players.length || 1));
-          for (const p of players) {
+          const share = Math.min(state.bet.amountPer * 2, pot / (payoutPlayers.length || 1));
+          for (const p of payoutPlayers) {
             await payTo(p.addr, share);
             results.push({ addr: p.addr, amount: share, type: 'win' });
           }
@@ -2531,8 +2545,8 @@ async function settleBet(hostWon) {
           await payTo(hostAddr, pot);
           results = [{ addr: hostAddr, amount: pot, type: 'win' }];
         } else {
-          const sh = pot / (players.length || 1);
-          for (const p of players) {
+          const sh = pot / (payoutPlayers.length || 1);
+          for (const p of payoutPlayers) {
             await payTo(p.addr, sh);
             results.push({ addr: p.addr, amount: sh, type: 'win' });
           }
@@ -2591,7 +2605,8 @@ async function settleBet(hostWon) {
 
     publishBetSettled(state.account.address, hostWon, pot, state.bet.structure);
     clearGlobalBet();
-    bcSend('bet_settled', { hostWon, yesWon: hostWon, pot, structure: state.bet.structure, playerCount: state.bet.players.length, amountPer: state.bet.amountPer });
+    const nonHostCount = state.bet.players.filter(p => p.addr.toLowerCase() !== state.account.address.toLowerCase()).length;
+    bcSend('bet_settled', { hostWon, yesWon: hostWon, pot, structure: state.bet.structure, playerCount: nonHostCount || state.bet.players.length, amountPer: state.bet.amountPer });
     try { localStorage.removeItem('throw_active_bet'); } catch(_) {}
 
     showSettledScreen(hostWon, pot, results);
