@@ -461,6 +461,56 @@ async function initWallet(acc, isNew = false) {
       } catch(_) {}
     }, 800);
   }
+
+  // Pull-to-refresh for PWA (no browser chrome to pull)
+  initPullToRefresh();
+}
+
+function initPullToRefresh() {
+  let startY = 0, pulling = false;
+  const threshold = 72; // px drag needed
+  let indicator = null;
+
+  const getIndicator = () => {
+    if (!indicator) {
+      indicator = document.createElement('div');
+      indicator.id = 'ptr-indicator';
+      indicator.style.cssText = 'position:fixed;top:0;left:0;right:0;height:0;background:linear-gradient(180deg,rgba(0,224,176,0.18) 0%,transparent 100%);display:flex;align-items:flex-end;justify-content:center;padding-bottom:6px;transition:height 0.1s;z-index:9999;pointer-events:none;overflow:hidden;';
+      indicator.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(0,224,176,0.7)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0;transition:opacity 0.2s"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
+      document.body.appendChild(indicator);
+    }
+    return indicator;
+  };
+
+  document.addEventListener('touchstart', e => {
+    if (window.scrollY === 0 && e.touches[0].clientY < 80) {
+      startY = e.touches[0].clientY;
+      pulling = true;
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchmove', e => {
+    if (!pulling) return;
+    const dy = e.touches[0].clientY - startY;
+    if (dy > 0) {
+      const ind = getIndicator();
+      const h = Math.min(dy * 0.5, threshold);
+      ind.style.height = h + 'px';
+      const icon = ind.querySelector('svg');
+      if (icon) icon.style.opacity = dy > threshold ? '1' : String(dy / threshold);
+      if (dy > threshold) ind.querySelector('svg')?.setAttribute('stroke', 'rgba(0,224,176,1)');
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', e => {
+    if (!pulling) return;
+    pulling = false;
+    const dy = e.changedTouches[0].clientY - startY;
+    if (indicator) { indicator.style.height = '0'; }
+    if (dy > threshold) {
+      setTimeout(() => location.reload(), 150);
+    }
+  }, { passive: true });
 }
 
 // Subscribe to global sponsor broadcast channel (throw/sponsor, retained)
@@ -588,7 +638,7 @@ function renderOrbSponsor() {
   const bg = document.getElementById('orb-sponsor-bg');
   if (!bg) return;
   if (_activeSponsor?.logoUrl) {
-    bg.innerHTML = `<img src="${_activeSponsor.logoUrl}" alt="${_activeSponsor.name}" />`;
+    bg.innerHTML = `<img src="${_activeSponsor.logoUrl}" alt="${_activeSponsor.name}" draggable="false" />`;
     bg.classList.add('visible');
   } else {
     bg.innerHTML = '';

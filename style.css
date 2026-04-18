@@ -4134,6 +4134,11 @@ body:has(.demo-banner:not(.hidden)) .screen {
   object-fit: contain;
   padding: 20px;
   filter: brightness(1.2) saturate(0.6);
+  pointer-events: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+  draggable: false;
 }
 
 /* ── POST-THROW SPONSOR CREDIT ───────────────────────────────────── */
