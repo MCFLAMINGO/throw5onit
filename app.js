@@ -2329,15 +2329,12 @@ async function startPot() {
     }));
   } catch(_) {}
 
-  // Enter MQTT room in background — don't await, go straight to pot screen
+  // Enter MQTT bet room in background — always subscribe to betRoomCode regardless
+  // of whether we're already in a general proximity room, so bet_join messages reach host
   const onBetJoin = (data) => {
     addPlayerToPot(data.addr, data.name || data.addr.slice(0,6), data.amount, data.side);
   };
-  if (!state.inRoom) {
-    enterRoom(betRoomCode, { onBetJoin }).catch(() => {});
-  } else {
-    room.onBetJoin = onBetJoin;
-  }
+  enterRoom(betRoomCode, { onBetJoin }).catch(() => {});
 
   // Publish — fire and forget
   try { publishBetOpen(state.account.address, state.bet); } catch(_) {}
