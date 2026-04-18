@@ -792,8 +792,8 @@ function showSponsorSplash(sponsor) {
     // Skip button
     const skipBtn = document.getElementById('btn-spsplash-skip');
     if (skipBtn) skipBtn.onclick = finish;
-    // Auto-advance after 5s
-    setTimeout(finish, 5000);
+    // Auto-advance after 8s
+    setTimeout(finish, 8000);
   });
 }
 
@@ -3363,8 +3363,9 @@ function hideBootLoader() {
   setTimeout(() => { try { bl.remove(); } catch(_) {} }, 250);
 }
 
-// Hard safety — boot loader ALWAYS gone within 4s even if JS errors
-setTimeout(hideBootLoader, 4000);
+// Hard safety — boot loader gone within 10s even if JS errors
+// Stored so sponsor splash flow can cancel it and control timing itself
+let _bootKillTimer = setTimeout(hideBootLoader, 10000);
 
 document.addEventListener('DOMContentLoaded', async () => {
 
@@ -3758,6 +3759,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       })();
       if (_cachedSponsor?.name) {
         setSponsor(_cachedSponsor);
+        // Cancel hard-kill timer — we control boot loader hide ourselves
+        clearTimeout(_bootKillTimer);
+        // Hide boot loader, then show sponsor splash
+        hideBootLoader();
         await showSponsorSplash(_cachedSponsor);
       }
       await initWallet(saved);

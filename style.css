@@ -3983,7 +3983,7 @@ body:has(.demo-banner:not(.hidden)) .screen {
   height: 100%;
   width: 0%;
   background: rgba(255,255,255,0.4);
-  transition: width 5s linear;
+  transition: width 8s linear;
   border-radius: 2px;
 }
 .spsplash-bar.running { width: 100%; }
