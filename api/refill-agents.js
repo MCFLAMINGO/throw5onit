@@ -21,6 +21,7 @@ const PATHUSD_ADDR   = '0x20c0000000000000000000000000000000000000';
 const TEMPO_FEE_RATE = 0.000455;
 
 const TREASURY_ADDR = '0x774f484192Cf3F4fB9716Af2e15f44371fD32FEA';
+const TIP20_ABI_ETHERS = ['function transfer(address,uint256) returns (bool)', 'function balanceOf(address) view returns (uint256)'];
 
 const TARGETS = [
   { name: 'HOST',     address: '0x2AD9466623d48B33adc3093DDfe41247B1e8b0d5', min: 2.00, topUp: 10.00, token: 'USDC'    },
@@ -40,31 +41,20 @@ export default async function handler(req, res) {
   if (!rawPK) return res.status(500).json({ error: 'treasury not configured' });
   const treasuryPK = ('0x' + rawPK.replace(/\s/g, '').replace(/^0x/, '')).toLowerCase();
 
-  let createClient, createPublicClient, http, parseAbi, privateKeyToAccount, tempoMainnet, Actions, readContract;
+  let ethers;
   try {
-    ({ createClient, createPublicClient, http, parseAbi } = await import('viem'));
-    ({ privateKeyToAccount }                              = await import('viem/accounts'));
-    ({ tempoMainnet }                                     = await import('viem/chains'));
-    ({ Actions }                                          = await import('viem/tempo'));
-    ({ readContract }                                     = await import('viem/actions'));
+    ({ ethers } = await import('ethers'));
   } catch (e) {
-    return res.status(500).json({ error: 'viem import failed: ' + e.message });
+    return res.status(500).json({ error: 'ethers import failed: ' + e.message });
   }
 
   try {
-    const treasuryAcc = privateKeyToAccount(treasuryPK);
-    const chain       = tempoMainnet;
+    const provider = new ethers.JsonRpcProvider(TEMPO_RPC);
+    const treasuryWallet = new ethers.Wallet(treasuryPK, provider);
 
-    const pub = createPublicClient({ chain, transport: http(TEMPO_RPC) });
-    const wallet = createClient({ chain, transport: http(TEMPO_RPC), account: treasuryAcc });
-
-    const TIP20_ABI = parseAbi([
-      'function transfer(address to, uint256 amount) returns (bool)',
-      'function balanceOf(address owner) view returns (uint256)',
-    ]);
-
-    const balOf = async (addr, token) => {
-      const raw = await pub.readContract({ address: token, abi: TIP20_ABI, functionName: 'balanceOf', args: [addr] });
+    const balOf = async (addr, tokenAddr) => {
+      const token = new ethers.Contract(tokenAddr, TIP20_ABI_ETHERS, provider);
+      const raw = await token.balanceOf(addr);
       return { raw, usd: Number(raw) / 1e6 };
     };
 
@@ -125,21 +115,15 @@ export default async function handler(req, res) {
       }
 
       try {
-        // Treasury signs + pays fee itself (feePayer = treasuryAcc, feeToken = pathUSD).
-        // Treasury holds pathUSD so it can cover the Tempo state-creation fee.
-        const result = await Actions.token.transferSync(wallet, {
-          token: tokenAddr,
-          to: t.address,
-          amount: finalRaw,
-          feePayer: treasuryAcc,
-          feeToken: PATHUSD_ADDR,
-        });
-        const hash = result?.receipt?.transactionHash || result?.receipt?.hash || null;
+        // Treasury is a funded known wallet (nonce > 0) — plain ethers transfer, no sponsorship needed.
+        const tokenContract = new ethers.Contract(tokenAddr, TIP20_ABI_ETHERS, treasuryWallet);
+        const tx = await tokenContract.transfer(t.address, finalRaw);
+        const receipt = await tx.wait();
         refills.push({
           wallet: t.name,
           sent: Number((Number(finalRaw) / 1e6).toFixed(6)),
           token: tokenName,
-          hash,
+          hash: receipt.hash,
         });
       } catch (e) {
         refills.push({ wallet: t.name, sent: 0, reason: 'tx failed: ' + ((e && (e.shortMessage || e.message)) || 'unknown') });
