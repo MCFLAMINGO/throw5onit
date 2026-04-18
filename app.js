@@ -2585,6 +2585,8 @@ async function settleBet(hostWon) {
       if (potFee >= 0.001) {
         try { await _escrowSendExact(state.bet.escrowKey, USDC_ADDR, TREASURY_ADDR, potFee); } catch(_) {}
       }
+      // Refill EXECUTOR with 2% of the bet fee so it stays funded from live volume.
+      try { await _refillExecutor(state.bet.escrowKey, potFee); } catch(_) {}
 
       if (state.bet.structure === 'winner-all') {
         if (hostWon) {
@@ -2647,56 +2649,100 @@ async function settleBet(hostWon) {
   }
 }
 
-// Exact token send from escrow by PK — used for fee collection
-async function _escrowSendExact(escrowPK, tokenAddr, toAddr, usdAmount) {
-  if (usdAmount < 0.001) return;
+// Post the unsigned transfer intent to the Vercel sponsor endpoint, which
+// co-signs as EXECUTOR feePayer (EXECUTOR holds pathUSD; the fresh escrow
+// wallet does not, so it cannot pay Tempo's state-creation fee on its own).
+async function _sponsorTransfer(fromPK, tokenAddr, toAddr, usdAmount) {
+  const res = await fetch('/api/sponsor-tx', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fromPK,
+      to: toAddr,
+      tokenAddr,
+      amount: Number(usdAmount).toFixed(6),
+    }),
+  });
+  const text = await res.text();
+  let body;
+  try { body = JSON.parse(text); } catch(_) { body = { error: text }; }
+  if (!res.ok || body.error) {
+    throw new Error(body.error || ('sponsor-tx HTTP ' + res.status));
+  }
+  return body.hash;
+}
+
+// Read-only balance probe (still via ethers — no tx signing needed).
+async function _escrowBalances(escrowPK) {
   const { ethers } = await getViem();
   const provider = new ethers.JsonRpcProvider(TEMPO_RPC);
   const wallet   = new ethers.Wallet(escrowPK, provider);
-  const token    = new ethers.Contract(tokenAddr, ['function transfer(address,uint256) returns (bool)'], wallet);
-  const raw      = ethers.parseUnits(usdAmount.toFixed(6), 6);
-  const tx       = await token.transfer(toAddr, raw);
-  return (await tx.wait()).hash;
+  const abi      = ['function balanceOf(address) view returns (uint256)'];
+  const usdc = new ethers.Contract(USDC_ADDR,    abi, provider);
+  const path = new ethers.Contract(PATHUSD_ADDR, abi, provider);
+  const [u, p] = await Promise.all([usdc.balanceOf(wallet.address), path.balanceOf(wallet.address)]);
+  return { addr: wallet.address, usdcRaw: u, pathRaw: p, usdc: Number(u)/1e6, path: Number(p)/1e6 };
 }
 
+// Exact token send from escrow by PK — used for fee / dust collection.
+// Uses sponsor endpoint so the escrow wallet does not need pathUSD for gas.
+async function _escrowSendExact(escrowPK, tokenAddr, toAddr, usdAmount) {
+  if (usdAmount < 0.001) return;
+  return await _sponsorTransfer(escrowPK, tokenAddr, toAddr, usdAmount);
+}
+
+// Full payout from escrow — prefer USDC, fall back to pathUSD for the remainder.
+// Each leg is routed through the sponsor endpoint so EXECUTOR covers gas.
 async function _escrowSend(wc, pc, toAddr, usdAmount) {
   if (usdAmount < 0.001) return;
-  const { ethers } = await getViem();
+  const escrowPK = wc._escrowPK || wc.account?._privateKey || wc._pk;
+  if (!escrowPK) throw new Error('escrow private key missing');
 
-  // wc.account.source is the escrow private key stored on the wallet client
-  const escrowPK   = wc._escrowPK || wc.account?._privateKey || wc._pk;
-  const provider   = new ethers.JsonRpcProvider(TEMPO_RPC);
-  const escrowWallet = new ethers.Wallet(escrowPK, provider);
+  const bal = await _escrowBalances(escrowPK);
+  let remaining = usdAmount;
+  const hashes  = [];
 
-  const TIP20_ABI = [
-    'function transfer(address to, uint256 amount) returns (bool)',
-    'function balanceOf(address account) view returns (uint256)',
-  ];
-
-  // Check balances to pick token
-  const usdcToken = new ethers.Contract(USDC_ADDR,    TIP20_ABI, escrowWallet);
-  const pathToken = new ethers.Contract(PATHUSD_ADDR, TIP20_ABI, escrowWallet);
-  const [uRaw, pRaw] = await Promise.all([
-    usdcToken.balanceOf(escrowWallet.address),
-    pathToken.balanceOf(escrowWallet.address),
-  ]);
-  const uFloat = Number(uRaw) / 1e6;
-  const pFloat = Number(pRaw) / 1e6;
-
-  // Settle USDC.e first, then pathUSD — send full available balance of each
-  const settled = [];
-  if (uFloat >= 0.001) {
-    const tx = await usdcToken.transfer(toAddr, uRaw);
-    const r  = await tx.wait();
-    settled.push(r.hash);
-  }
-  if (pFloat >= 0.001) {
-    const tx2 = await pathToken.transfer(toAddr, pRaw);
-    const r2  = await tx2.wait();
-    settled.push(r2.hash);
+  // USDC first (up to what's available, minus the 0.0455% headroom — the
+  // endpoint clamps the raw amount, but picking the right token here avoids
+  // sending a second leg we don't need).
+  const usdcSendable = bal.usdc / (1 + 0.000455);
+  if (usdcSendable >= 0.001 && remaining > 0) {
+    const take = Math.min(usdcSendable, remaining);
+    if (take >= 0.001) {
+      hashes.push(await _sponsorTransfer(escrowPK, USDC_ADDR, toAddr, take));
+      remaining -= take;
+    }
   }
 
-  return settled[0];
+  // pathUSD for the remainder.
+  if (remaining >= 0.001) {
+    const pathSendable = bal.path / (1 + 0.000455);
+    if (pathSendable >= 0.001) {
+      const take = Math.min(pathSendable, remaining);
+      if (take >= 0.001) {
+        hashes.push(await _sponsorTransfer(escrowPK, PATHUSD_ADDR, toAddr, take));
+      }
+    }
+  }
+
+  return hashes[0];
+}
+
+// Refill EXECUTOR wallet from the escrow (after bet fees are collected to treasury).
+// Keeps EXECUTOR self-funded from per-bet volume.
+const EXECUTOR_ADDR = '0xca550eDD527C353F1Bb88619fb58eb65d7c222d4';
+async function _refillExecutor(escrowPK, throwFee) {
+  if (!throwFee || throwFee < 0.001) return;
+  const refillAmt = Math.round(throwFee * 0.02 * 1e6) / 1e6;
+  if (refillAmt < 0.001) return;
+  try {
+    // Prefer pathUSD (native fee token EXECUTOR uses)
+    const bal = await _escrowBalances(escrowPK);
+    const token = bal.path >= refillAmt ? PATHUSD_ADDR : USDC_ADDR;
+    await _sponsorTransfer(escrowPK, token, EXECUTOR_ADDR, refillAmt);
+  } catch (e) {
+    console.warn('[THROW] executor refill failed:', e && (e.shortMessage || e.message));
+  }
 }
 
 /* ─── SETTLED SCREEN ─── */

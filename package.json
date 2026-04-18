@@ -2,6 +2,8 @@
   "name": "throw5onit",
   "version": "1.0.0",
   "dependencies": {
-    "mqtt": "^5.3.4"
+    "mqtt": "^5.3.4",
+    "tempo.ts": "^0.14.2",
+    "viem": "^2.44.0"
   }
 }
