@@ -3247,6 +3247,12 @@ async function dockGiftWallet() {
   const nameEl = document.getElementById('dock-friend-name');
   const name = nameEl.value.trim().toUpperCase().slice(0,6);
   if (!name) { nameEl.focus(); return; }
+  // Guard: warn if a contact with this name already exists
+  const existing = getContacts().find(c => (c.name || '').toUpperCase() === name);
+  if (existing) {
+    const ok = confirm(`You already have a friend called "${name}". Create another wallet for them?`);
+    if (!ok) return;
+  }
 
   const { ethers } = await getViem();
   const w   = ethers.Wallet.createRandom();
