@@ -796,7 +796,15 @@ h1 { font-size: 18px; font-weight: 700; }
   justify-content: center;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
   user-select: none;
+  -webkit-user-select: none;
+}
+.throw-orb * {
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
 }
 /* outer pulse ring */
 .throw-orb-ring {
