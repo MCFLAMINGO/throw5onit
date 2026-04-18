@@ -1,4 +1,4 @@
-const VERSION = 'v24';
+const VERSION = 'v92';
 const CACHE   = 'throw-' + VERSION;
 
 const ASSETS = [
@@ -33,5 +33,46 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request))
+  );
+});
+
+// ─── Force-update message from client ───────────────────────────────────────
+self.addEventListener('message', e => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
+// ─── Web Push handler ────────────────────────────────────────────────────────
+self.addEventListener('push', e => {
+  if (!e.data) return;
+  let data;
+  try { data = e.data.json(); } catch { return; }
+
+  const title   = data.title   || '💸 THROW';
+  const options = {
+    body:    data.body   || 'Money thrown to you!',
+    icon:    data.icon   || '/icon-192.png',
+    badge:   data.badge  || '/icon-192.png',
+    data:    data.data   || { url: 'https://throw5onit.com' },
+    vibrate: [200, 100, 200],
+    requireInteraction: false,
+  };
+
+  e.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || 'https://throw5onit.com';
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      // Focus existing window if open
+      for (const client of list) {
+        if (client.url.startsWith('https://throw5onit.com') && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      // Otherwise open new window
+      if (clients.openWindow) return clients.openWindow(url);
+    })
   );
 });

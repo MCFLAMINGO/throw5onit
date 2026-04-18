@@ -1,0 +1,7 @@
+{
+  "name": "throw5onit",
+  "version": "1.0.0",
+  "dependencies": {
+    "mqtt": "^5.3.4"
+  }
+}
