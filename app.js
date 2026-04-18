@@ -3327,6 +3327,19 @@ function onDockScanResult(raw) {
     status.textContent = '❌ Unrecognized QR — ask them to show their CATCH screen.';
     return;
   }
+
+  // If address already in contacts — go straight to their card
+  const existing = getContacts().find(c => c.addr.toLowerCase() === addr.toLowerCase());
+  if (existing) {
+    status.textContent = '✅ Already in your crew!';
+    setTimeout(() => {
+      showScreen('wallet');
+      openContactOverlay(existing);
+    }, 800);
+    return;
+  }
+
+  // New contact — ask for a name then add
   const name = (prompt('What is their name? (up to 6 chars)') || '').trim();
   if (!name) { status.textContent = 'Scan cancelled.'; return; }
   upsertContact(name, addr);
@@ -3334,12 +3347,14 @@ function onDockScanResult(raw) {
   // Ping the scanned address so THEIR device auto-adds us back
   const myAddr = state.account?.address;
   const myName = (getHandle() || myAddr?.slice(0,6) || '').toUpperCase().slice(0,6);
-  if (myAddr) {
-    _notifyContactAdded(addr, myAddr, myName);
-  }
+  if (myAddr) _notifyContactAdded(addr, myAddr, myName);
 
   status.textContent = '✅ Docked with ' + name.toUpperCase().slice(0,6) + '!';
-  setTimeout(() => showScreen('wallet'), 1500);
+  setTimeout(() => {
+    showScreen('wallet');
+    const newContact = getContacts().find(c => c.addr.toLowerCase() === addr.toLowerCase());
+    if (newContact) openContactOverlay(newContact);
+  }, 1000);
 }
 
 /* ─ URL param auto-import (?pk=&name=) ─ */
