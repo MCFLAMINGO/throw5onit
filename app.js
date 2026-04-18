@@ -40,8 +40,13 @@ const TREASURY_ADDR = '0x774f484192Cf3F4fB9716Af2e15f44371fD32FEA'; // THROW tre
 // THROW fee: 1% on $1 bets, 3% on everything else
 // Applied at settlement — deducted from pot before winner receives
 function getThrowFee(amount) {
-  if (amount <= 1) return Math.round(amount * 0.01 * 1e6) / 1e6;  // 1%
-  return Math.round(amount * 0.03 * 1e6) / 1e6;                   // 3%
+  // Regular throws: flat 1% always
+  return Math.round(amount * 0.01 * 1e6) / 1e6;
+}
+function getBetFee(amount) {
+  // Bets: 1% on $1, 3% on everything else
+  if (amount <= 1) return Math.round(amount * 0.01 * 1e6) / 1e6;
+  return Math.round(amount * 0.03 * 1e6) / 1e6;
 }
 
 // Tempo DEX — fee is swapped through AMM so we earn the 0.3% LP fee on our own volume
@@ -812,8 +817,6 @@ function renderWalletUI() {
    ═════════════════════════════════════════════════════════════════════ */
 async function sendStablecoin(toAddr, usdAmount) {
   if (DEMO_MODE) return demoSendStablecoin(toAddr, usdAmount);
-  const { createWalletClient, createPublicClient, http, parseUnits } = await getViem();
-
   // $0.10 service fee goes to treasury FIRST, recipient gets net amount
   const fee = getThrowFee(usdAmount);
   const netAmount = Math.max(0, usdAmount - fee);
@@ -1428,7 +1431,7 @@ function setupThrowScreen() {
       if (orbLabel) orbLabel.textContent = '$' + a;
       qbtns.forEach(x => x.classList.remove('active'));
       b.classList.add('active');
-      const fee = getThrowFee(a);
+      const fee = getBetFee(a);
       const net = (a - fee).toFixed(2);
       document.getElementById('throw-fee-line').textContent = `$${fee.toFixed(2)} fee — recipient gets $${net}`;
     };
@@ -2124,7 +2127,7 @@ async function settleBet(hostWon) {
       const pc = null; // unused in ethers-based _escrowSend
 
       // Fee split: take THROW cut from pot before sending to winner
-      const potFee = getThrowFee(state.bet.amountPer) * (players.length + 1);
+      const potFee = getBetFee(state.bet.amountPer) * (players.length + 1);
       const potNet = Math.max(0, pot - potFee);
       if (potFee >= 0.001) {
         try { await _escrowSendExact(state.bet.escrowKey, USDC_ADDR, TREASURY_ADDR, potFee); } catch(_) {}
@@ -2708,7 +2711,7 @@ function closeContactOverlay() {
   contactOverlayTarget = null;
 }
 function updateContactFeeLine() {
-  const fee = getThrowFee(contactOverlayAmount);
+  const fee = getBetFee(contactOverlayAmount);
   const net = (contactOverlayAmount - fee).toFixed(2);
   document.getElementById('contact-fee-line').textContent = `$${fee.toFixed(2)} fee — they get $${net}`;
 }
