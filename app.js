@@ -567,6 +567,13 @@ function subscribeDemoCredits(myAddr) {
           moneyRain();
           setTimeout(() => hideTxFlash(), 3000);
           state.txHistory.unshift({ type: 'received', amount: amt, from: fromName, ts: Date.now() });
+          // Reset bet state + THROW button so player can bet again
+          if (state.bet?.active && !state.bet?.isHost) {
+            state.bet.active = false;
+            state.bet.joined = false;
+            state.bet.joinedEscrow = null;
+            clearPendingBetButton();
+          }
           // If catch window is active, also complete it
           if (catchState.active && !catchState.fired) {
             onCatchHit(amt, fromName, data.throwId || null, data.event);
