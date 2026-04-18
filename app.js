@@ -2183,7 +2183,7 @@ async function joinBetInstantly() {
       try { return localStorage.getItem('throw_my_name') || myAddr.slice(2,8).toUpperCase(); }
       catch(_) { return myAddr.slice(2,8).toUpperCase(); }
     })();
-    const netAmt = state.bet.amountPer - 0.10;
+    const netAmt = state.bet.amountPer - getThrowFee(state.bet.amountPer);
 
     // Notify host via MQTT + relay fallback
     publishBetJoin(state.bet.hostAddr, myAddr, myName, netAmt, 'yes', state.bet.roomCode);
@@ -2354,7 +2354,7 @@ async function startPot() {
   clearPendingBetButton();
   if (_betScanTimer) { clearTimeout(_betScanTimer); _betScanTimer = null; }
 
-  // Demo: deduct host stake immediately and seed pot display
+  // Deduct host stake and seed pot display (both demo and live)
   if (DEMO_MODE) {
     const stake = state.bet.amountPer;
     state.total   = Math.max(0, state.total - stake);
@@ -2362,6 +2362,20 @@ async function startPot() {
     try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
     renderWalletUI();
     addPlayerToPot(state.account.address, 'You (host)', stake, 'yes');
+  } else {
+    // Live: send host stake to escrow so pot is correctly seeded
+    const stake = state.bet.amountPer;
+    try {
+      await sendStablecoin(state.bet.escrowAddr, stake);
+      state.bet.total = stake - getThrowFee(stake);
+      addPlayerToPot(state.account.address, 'You (host)', state.bet.total, 'yes');
+      await refreshBalances();
+    } catch(e) {
+      alert('Could not open bet: ' + (e.shortMessage || e.message));
+      state.bet.active = false;
+      try { localStorage.removeItem('throw_active_bet'); } catch(_) {}
+      return;
+    }
   }
 
   showScreen('pot');
@@ -2561,8 +2575,12 @@ async function settleBet(hostWon) {
       const wc = { _escrowPK: state.bet.escrowKey };
       const pc = null; // unused in ethers-based _escrowSend
 
-      // Fee split: take THROW cut from pot before sending to winner
-      const potFee = getBetFee(state.bet.amountPer) * (players.length + 1);
+      // Exclude host from payout list — host was seeded to pot display only
+      const nonHostPlayers = players.filter(p => p.addr.toLowerCase() !== hostAddr.toLowerCase());
+      const payoutPlayers  = nonHostPlayers.length > 0 ? nonHostPlayers : players;
+
+      // Fee: per-participant including host (all 3 put money in)
+      const potFee = getBetFee(state.bet.amountPer) * players.length;
       const potNet = Math.max(0, pot - potFee);
       if (potFee >= 0.001) {
         try { await _escrowSendExact(state.bet.escrowKey, USDC_ADDR, TREASURY_ADDR, potFee); } catch(_) {}
@@ -2573,8 +2591,8 @@ async function settleBet(hostWon) {
           await _escrowSend(wc, pc, hostAddr, potNet);
           results = [{ addr: hostAddr, amount: potNet, type: 'win' }];
         } else {
-          const share = potNet / (players.length || 1);
-          for (const p of players) {
+          const share = potNet / (payoutPlayers.length || 1);
+          for (const p of payoutPlayers) {
             await _escrowSend(wc, pc, p.addr, share);
             results.push({ addr: p.addr, amount: share, type: 'win' });
           }
@@ -2583,22 +2601,29 @@ async function settleBet(hostWon) {
         const hostStake = state.bet.amountPer;
         if (hostWon) {
           await _escrowSend(wc, pc, hostAddr, Math.min(hostStake * 2, potNet));
+          results = [{ addr: hostAddr, amount: Math.min(hostStake * 2, potNet), type: 'win' }];
         } else {
-          let remaining = potNet;
-          for (const p of players) {
-            const pay = Math.min(p.amount * 2, remaining / players.length);
-            await _escrowSend(wc, pc, p.addr, pay);
-            remaining -= pay;
-            results.push({ addr: p.addr, amount: pay, type: 'win' });
+          // Players each win up to 2× their stake; dust goes to treasury not host
+          const share = Math.min(state.bet.amountPer * 2, potNet / (payoutPlayers.length || 1));
+          for (const p of payoutPlayers) {
+            await _escrowSend(wc, pc, p.addr, share);
+            results.push({ addr: p.addr, amount: share, type: 'win' });
           }
-          if (remaining > 0.001) await _escrowSend(wc, pc, hostAddr, remaining);
+          // Burn any remaining dust to treasury
+          const dust = potNet - share * payoutPlayers.length;
+          if (dust > 0.001) { try { await _escrowSendExact(state.bet.escrowKey, USDC_ADDR, TREASURY_ADDR, dust); } catch(_) {} }
         }
       } else {
+        // Round-robin
         if (hostWon) {
           await _escrowSend(wc, pc, hostAddr, potNet);
+          results = [{ addr: hostAddr, amount: potNet, type: 'win' }];
         } else {
-          const sh = potNet / (players.length || 1);
-          for (const p of players) await _escrowSend(wc, pc, p.addr, sh);
+          const sh = potNet / (payoutPlayers.length || 1);
+          for (const p of payoutPlayers) {
+            await _escrowSend(wc, pc, p.addr, sh);
+            results.push({ addr: p.addr, amount: sh, type: 'win' });
+          }
         }
       }
     }
@@ -2780,7 +2805,7 @@ async function executePlayerBetJoin() {
       try { return localStorage.getItem('throw_my_name') || myAddr.slice(2,8).toUpperCase(); }
       catch(_) { return myAddr.slice(2,8).toUpperCase(); }
     })();
-    const netAmt  = state.bet.amountPer - 0.10;
+    const netAmt  = state.bet.amountPer - getThrowFee(state.bet.amountPer);
     const capSide = state.bet.side || 'yes';
 
     if (state.bet.roomCode) {
