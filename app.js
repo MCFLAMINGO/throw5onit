@@ -2690,14 +2690,14 @@ async function _escrowBalances(escrowPK) {
 // Exact token send from escrow by PK — used for fee / dust collection.
 // Uses sponsor endpoint so the escrow wallet does not need pathUSD for gas.
 async function _escrowSendExact(escrowPK, tokenAddr, toAddr, usdAmount) {
-  if (usdAmount < 0.001) return;
+  if (usdAmount < 0.0001) return;
   return await _sponsorTransfer(escrowPK, tokenAddr, toAddr, usdAmount);
 }
 
 // Full payout from escrow — prefer USDC, fall back to pathUSD for the remainder.
 // Each leg is routed through the sponsor endpoint so EXECUTOR covers gas.
 async function _escrowSend(wc, pc, toAddr, usdAmount) {
-  if (usdAmount < 0.001) return;
+  if (usdAmount < 0.0001) return;
   const escrowPK = wc._escrowPK || wc.account?._privateKey || wc._pk;
   if (!escrowPK) throw new Error('escrow private key missing');
 
