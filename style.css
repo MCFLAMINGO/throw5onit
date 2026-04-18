@@ -4009,14 +4009,14 @@ body:has(.demo-banner:not(.hidden)) .screen {
   width: 100%;
   position: relative;
 }
-/* Wallet home screen — strips flank balance + action grid */
+/* Wallet home screen — wheel strips flank balance + action grid */
 .wallet-arena {
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: center;
   width: 100%;
-  gap: 0;
+  gap: 4px;
   position: relative;
 }
 .wallet-arena-center {
@@ -4026,55 +4026,71 @@ body:has(.demo-banner:not(.hidden)) .screen {
   flex-direction: column;
   align-items: center;
 }
-.wallet-arena .sponsor-strip {
-  height: 320px;
-  align-self: center;
-}
 .sponsor-strip {
-  width: 36px;
-  height: 220px;
+  width: 88px;
+  height: 318px;       /* exactly 3 tiles × 106px */
   overflow: hidden;
-  border-radius: 18px;
+  border-radius: 16px;
   background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.07);
   flex-shrink: 0;
   cursor: pointer;
   position: relative;
   transition: background 0.2s;
+  /* wheel fade — top & bottom edges fade to black like a real drum */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%);
 }
 .sponsor-strip:active { background: rgba(255,255,255,0.07); }
 .sponsor-strip-track {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 8px 0;
+  gap: 0;
+  padding: 0;
+  will-change: transform;
   /* animation applied via JS once rendered */
 }
+/* Each tile is 106px tall — 3 tiles = 318px = strip height */
 .sponsor-item {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: #111;
+  width: 88px;
+  height: 106px;
   flex-shrink: 0;
   overflow: hidden;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255,255,255,0.08);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  gap: 6px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  background: transparent;
+  transition: background 0.15s;
 }
 .sponsor-item img {
-  width: 100%;
-  height: 100%;
+  width: 60px;
+  height: 60px;
   object-fit: contain;
-  padding: 4px;
+  border-radius: 12px;
+  background: #1a1a1a;
+  padding: 8px;
+}
+.sponsor-item .sponsor-item-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(255,255,255,0.55);
+  text-transform: uppercase;
+  text-align: center;
+  max-width: 80px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .sponsor-item.sponsor-text {
-  font-size: 0.45rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  color: rgba(255,255,255,0.5);
+  font-size: 1.8rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: rgba(255,255,255,0.35);
   text-transform: uppercase;
   text-align: center;
   word-break: break-all;

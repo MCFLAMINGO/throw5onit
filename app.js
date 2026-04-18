@@ -617,6 +617,11 @@ function renderSponsorStrips() {
         img.src = item.logoUrl;
         img.alt = item.name || '';
         el.appendChild(img);
+        // Name label under logo
+        const lbl = document.createElement('div');
+        lbl.className = 'sponsor-item-label';
+        lbl.textContent = item.name || '';
+        el.appendChild(lbl);
       } else {
         el.textContent = item.text || item.name?.slice(0,3) || '$';
       }
@@ -629,14 +634,15 @@ function renderSponsorStrips() {
       track.appendChild(el);
     });
 
-    // CSS animation for smooth infinite scroll
+    // CSS animation for smooth infinite scroll — tile height is 106px, no gap
     const totalItems = items.length;
-    const itemH = 40; // 28px item + 12px gap
+    const itemH = 106; // matches CSS .sponsor-item height
     const totalH = totalItems * itemH;
     track.style.animation = 'none';
     track.style.transform = 'translateY(0)';
     // Use CSS animation on the track
-    track.style.animation = `stripScroll ${totalItems * 1.4}s linear infinite`;
+    // ~3s per tile so it reads like a slow deliberate wheel
+    track.style.animation = `stripScroll ${totalItems * 3}s linear infinite`;
     track.style.setProperty('--strip-half', `-${totalH}px`);
   });
 
