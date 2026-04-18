@@ -100,6 +100,12 @@ async function demoSendStablecoin(toAddr, usdAmount) {
   const fee    = getThrowFee(usdAmount);
   const net    = Math.max(0, usdAmount - fee);
   if (state.total < usdAmount) throw new Error('Insufficient demo balance');
+
+  // 0.5/0.5 venue split in demo mode too
+  const isAtVenue = !!(_activeSponsor?.isVenue && _activeSponsor?.venueId);
+  const venueFee  = isAtVenue ? Math.round(fee * 0.5 * 1e6) / 1e6 : 0;
+  if (venueFee > 0) accrueVenueFee(_activeSponsor.venueId, _activeSponsor.name, venueFee, usdAmount);
+
   // Deduct sender
   state.total   = Math.max(0, state.total - usdAmount);
   state.pathUSD = state.total;
@@ -1086,15 +1092,27 @@ function renderWalletUI() {
    ═════════════════════════════════════════════════════════════════════ */
 async function sendStablecoin(toAddr, usdAmount) {
   if (DEMO_MODE) return demoSendStablecoin(toAddr, usdAmount);
-  // $0.10 service fee goes to treasury FIRST, recipient gets net amount
-  const fee = getThrowFee(usdAmount);
+
+  // 1% fee total. If at a venue: 0.5% to treasury + 0.5% accrues to venue.
+  // If no venue: 1% to treasury.
+  const fee = getThrowFee(usdAmount);       // always 1%
   const netAmount = Math.max(0, usdAmount - fee);
-  const totalNeeded = usdAmount; // sender pays full amount (fee + net)
+
+  const isAtVenue = !!(_activeSponsor?.isVenue && _activeSponsor?.venueId);
+  const treasuryFee = isAtVenue
+    ? Math.round(fee * 0.5 * 1e6) / 1e6     // 0.5% to THROW
+    : fee;                                   // 1.0% to THROW
+  const venueFee = isAtVenue
+    ? Math.round(fee * 0.5 * 1e6) / 1e6     // 0.5% accrued for venue (paid monthly)
+    : 0;
 
   if (TREASURY_ADDR && TREASURY_ADDR !== '0x0000000000000000000000000000000000000001') {
-    // Send fee to treasury (silently — user sees full $X throw)
-    try { await _sendToken(USDC_ADDR, 6, TREASURY_ADDR, fee); } catch (_) {}
+    // Send THROW's cut to treasury (silently — user sees full $X throw)
+    try { await _sendToken(USDC_ADDR, 6, TREASURY_ADDR, treasuryFee); } catch (_) {}
   }
+
+  // Accrue venue's cut locally — paid out monthly in batch from dashboard
+  if (venueFee > 0) accrueVenueFee(_activeSponsor.venueId, _activeSponsor.name, venueFee, usdAmount);
 
   // Choose token for net payment: prefer USDC.e, then pathUSD — both 6 decimals
   let tokenAddr, decimals = 6;
@@ -1117,6 +1135,31 @@ async function sendStablecoin(toAddr, usdAmount) {
   }
 
   await _sendToken(tokenAddr, decimals, toAddr, netAmount);
+}
+
+// Accrue venue fee locally — aggregated by venueId, paid out monthly from Swarm dashboard
+function accrueVenueFee(venueId, venueName, feeAmount, throwAmount) {
+  try {
+    const key = 'throw_venue_accrued_' + venueId;
+    const existing = JSON.parse(localStorage.getItem(key) || '{"venueId":"","venueName":"","totalAccrued":0,"throwCount":0,"log":[]}');
+    existing.venueId   = venueId;
+    existing.venueName = venueName;
+    existing.totalAccrued = Math.round((existing.totalAccrued + feeAmount) * 1e6) / 1e6;
+    existing.throwCount++;
+    existing.log.push({ ts: Date.now(), fee: feeAmount, throwAmt: throwAmount });
+    // Keep last 500 log entries
+    if (existing.log.length > 500) existing.log = existing.log.slice(-500);
+    localStorage.setItem(key, JSON.stringify(existing));
+  } catch (_) {}
+
+  // Fire MQTT venue_throw event for Swarm dashboard accounting
+  try {
+    if (room.client) {
+      room.client.publish('throw/venue/throws', JSON.stringify({
+        venueId, venueName, feeAmount, throwAmount, ts: Date.now()
+      }), { qos: 0 });
+    }
+  } catch (_) {}
 }
 
 async function _sendToken(tokenAddr, decimals, toAddr, usdAmount) {
