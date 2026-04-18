@@ -310,7 +310,7 @@ h1 { font-size: 18px; font-weight: 700; }
 }
 
 .balance-amount {
-  font-size: 64px;
+  font-size: clamp(36px, 10vw, 64px);
   font-weight: 700;
   line-height: 1;
   color: #fff;
@@ -361,6 +361,9 @@ h1 { font-size: 18px; font-weight: 700; }
   gap: 10px;
   width: 100%;
   max-width: 360px;
+  margin: 0 auto;
+  justify-items: center;
+  align-items: center;
 }
 
 /* ADD FRIEND — left */
@@ -4021,15 +4024,15 @@ body:has(.demo-banner:not(.hidden)) .screen {
 }
 .wallet-arena-center {
   flex: 0 0 auto;
-  width: min(320px, calc(100vw - 196px));
+  width: min(320px, calc(100vw - 192px));
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 /* Strips only as tall as the balance area — don’t overlap buttons */
 .wallet-arena .sponsor-strip {
-  height: 212px; /* 2 full tiles visible */
-  margin-top: 16px;
+  height: 196px; /* stays above action grid */
+  margin-top: 6px;
 }
 .sponsor-strip {
   width: 88px;

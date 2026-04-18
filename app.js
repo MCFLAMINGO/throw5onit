@@ -473,8 +473,11 @@ function subscribeSponsorChannel() {
     c.on('message', (_t, msg) => {
       try {
         const data = JSON.parse(msg.toString());
-        const sp = data.sponsor || null;
+        const sp  = data.sponsor  || null;
+        const all = data.sponsors || (sp ? [sp] : []);
+        _allSponsors = all;
         try { localStorage.setItem('throw_active_sponsor', JSON.stringify(sp)); } catch(_) {}
+        try { localStorage.setItem('throw_all_sponsors',   JSON.stringify(all)); } catch(_) {}
         setSponsor(sp);
       } catch(_) {}
     });
@@ -545,6 +548,7 @@ function subscribeDemoCredits(myAddr) {
 
 // Active sponsor state
 let _activeSponsor = null;  // { name, logoUrl, tagline, color }
+let _allSponsors   = [];    // all active sponsors for strip rotation
 let _stripAnimFrame = null;
 let _stripOffset = 0;
 let _stripItemHeight = 40; // px per item including gap
@@ -603,11 +607,13 @@ function renderSponsorStrips() {
     track.innerHTML = '';
     clearInterval(_stripScrollInterval);
 
-    // Build item list — sponsor brand repeated + house brands as filler
+    // Build item list — all active sponsors + house brand separators
     const items = [];
-    if (_activeSponsor) {
-      // Paid sponsor: interleave their logo with house brand separators
-      for (let i = 0; i < 4; i++) items.push({ ..._activeSponsor, paid: true });
+    const rotation = _allSponsors.length > 0 ? _allSponsors : (_activeSponsor ? [_activeSponsor] : []);
+    if (rotation.length > 0) {
+      rotation.forEach(sp => {
+        for (let i = 0; i < 2; i++) items.push({ ...sp, paid: true });
+      });
       HOUSE_BRANDS.forEach(b => items.push(b));
     } else {
       HOUSE_BRANDS.forEach(b => items.push(b));
@@ -2535,7 +2541,7 @@ async function settleBet(hostWon) {
 
     publishBetSettled(state.account.address, hostWon, pot, state.bet.structure);
     clearGlobalBet();
-    bcSend('bet_settled', { hostWon, yesWon: hostWon, pot, structure: state.bet.structure });
+    bcSend('bet_settled', { hostWon, yesWon: hostWon, pot, structure: state.bet.structure, playerCount: state.bet.players.length, amountPer: state.bet.amountPer });
     try { localStorage.removeItem('throw_active_bet'); } catch(_) {}
 
     showSettledScreen(hostWon, pot, results);
@@ -2861,11 +2867,31 @@ bc.onmessage = (evt) => {
       document.getElementById('settled-breakdown').textContent =
         `Pot: $${payload.pot.toFixed(2)} | ${payload.structure.toUpperCase().replace('-', ' ')}`;
       if (won) moneyRain(8);
+      // Demo: credit winnings directly — don't rely on MQTT round-trip
+      if (DEMO_MODE && won) {
+        const pot = payload.pot || 0;
+        const playerCount = payload.playerCount || 1;
+        const amountPer   = payload.amountPer   || 0;
+        let payout = 0;
+        if (payload.structure === 'winner-all') {
+          payout = pot / playerCount;
+        } else if (payload.structure === 'flip') {
+          payout = Math.min(amountPer * 2, pot / playerCount);
+        } else {
+          payout = pot / playerCount;
+        }
+        if (payout > 0) {
+          state.total   = (state.total || 0) + payout;
+          state.pathUSD = state.total;
+          try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
+          renderWalletUI();
+        }
+      }
       state.bet.active = false;
-      state.bet.joined = false;       // reset so player can join the next bet
+      state.bet.joined = false;
       state.bet.joinedEscrow = null;
       clearPendingBetButton();
-      setTimeout(() => refreshBalances(), 3000);
+      setTimeout(() => refreshBalances(), 1000);
     }
   }
 };
@@ -3784,6 +3810,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Get cached sponsor — if empty, wait up to 1.5s for MQTT retained message
       let _cachedSponsor = (() => {
         try { return JSON.parse(localStorage.getItem('throw_active_sponsor') || 'null'); } catch(_) { return null; }
+      })();
+      _allSponsors = (() => {
+        try { return JSON.parse(localStorage.getItem('throw_all_sponsors') || '[]'); } catch(_) { return []; }
       })();
       if (!_cachedSponsor?.name) {
         // Poll for up to 2s for MQTT retained message to arrive
