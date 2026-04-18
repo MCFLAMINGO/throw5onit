@@ -656,6 +656,88 @@ function showThrowSponsorCredit(sponsorName) {
   }, 3000);
 }
 
+// ── GPS Venue Proximity Resolution ────────────────────────────────────────
+// Venues register with lat/lng + radiusMi. On app open we check GPS and
+// prefer the nearest venue's ad over the global sponsor.
+// Venues stored in 'throw_venues' localStorage key (populated by dashboard push).
+
+function haversineDistMi(lat1, lng1, lat2, lng2) {
+  const R = 3958.8; // Earth radius miles
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 +
+    Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function getNearbyVenueSponsor(lat, lng) {
+  try {
+    const venues = JSON.parse(localStorage.getItem('throw_venues') || '[]');
+    let best = null, bestDist = Infinity;
+    for (const v of venues) {
+      if (v.status !== 'active' || !v.lat || !v.lng) continue;
+      const dist = haversineDistMi(lat, lng, v.lat, v.lng);
+      if (dist <= (v.radiusMi || 0.25) && dist < bestDist) {
+        best = v;
+        bestDist = dist;
+      }
+    }
+    if (!best) return null;
+    return {
+      name:       best.name,
+      logoUrl:    best.logoUrl || '',
+      tagline:    best.tagline || '',
+      url:        best.clickUrl || '',
+      placements: ['splash', 'orb', 'strips'],
+      paid:       true,
+      isVenue:    true,
+      venueId:    best.id,
+      revenueSharePct: best.revenueSharePct || 15,
+    };
+  } catch(_) { return null; }
+}
+
+async function resolveActiveSponsor() {
+  // 1. Try GPS — venue ad takes priority over global sponsor
+  try {
+    const pos = await new Promise((res, rej) =>
+      navigator.geolocation.getCurrentPosition(res, rej, { timeout: 3000, maximumAge: 60000 })
+    );
+    const venue = getNearbyVenueSponsor(pos.coords.latitude, pos.coords.longitude);
+    if (venue) return venue;
+  } catch(_) {} // GPS denied or timed out — fall through
+
+  // 2. Fall back to global sponsor pushed via MQTT
+  try {
+    const sp = JSON.parse(localStorage.getItem('throw_active_sponsor') || 'null');
+    if (sp?.name) return sp;
+  } catch(_) {}
+
+  return null;
+}
+
+// Log a venue throw event (for revenue share accounting)
+function logVenueThrow(amount) {
+  if (!_activeSponsor?.isVenue || !_activeSponsor?.venueId) return;
+  const payload = {
+    event:     'venue_throw',
+    venueId:   _activeSponsor.venueId,
+    venueName: _activeSponsor.name,
+    amount,
+    addr:      state.account?.address || 'anon',
+    ts:        Date.now(),
+  };
+  try {
+    const c = mqtt.connect(MQTT_BROKER, {
+      clientId: 'vt_' + Math.random().toString(36).slice(2,8),
+      clean: true, connectTimeout: 4000, reconnectPeriod: 0,
+    });
+    c.on('connect', () => {
+      c.publish('throw/venue/throws', JSON.stringify(payload), { qos: 0 }, () => c.end(true));
+    });
+  } catch(_) {}
+}
+
 // Show sponsor splash for returning users — resolves after display
 function showSponsorSplash(sponsor) {
   return new Promise(resolve => {
@@ -1528,6 +1610,8 @@ async function executeProximityThrow(target) {
     showTxFlash('\u2705', '$' + amount, 'Thrown to ' + target.name + '!');
     // Log throw-coincidence if a paid sponsor is active
     if (_activeSponsor?.paid) logSponsorEvent('throw_coincidence', _activeSponsor);
+    // Log venue throw for revenue share accounting
+    logVenueThrow(amount);
     showThrowSponsorCredit(_activeSponsor?.name || null);
     await refreshBalances();
     setTimeout(() => { hideTxFlash(); showScreen('wallet'); }, 1800);
@@ -3597,13 +3681,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Normal load — check for existing wallet
     const saved = await loadWallet();
     if (saved) {
-      // Returning user — check for active sponsor, show splash if one exists
-      const _pendingSponsor = (() => {
+      // Returning user — resolve sponsor (venue GPS first, global fallback)
+      // Run GPS check in background, don't block wallet load on it
+      resolveActiveSponsor().then(sponsor => {
+        if (sponsor) setSponsor(sponsor);
+      }).catch(() => {});
+      // Show splash only if we have a cached sponsor (GPS check is async — splash fires after)
+      const _cachedSponsor = (() => {
         try { return JSON.parse(localStorage.getItem('throw_active_sponsor') || 'null'); } catch(_) { return null; }
       })();
-      if (_pendingSponsor && _pendingSponsor.name) {
-        setSponsor(_pendingSponsor);
-        await showSponsorSplash(_pendingSponsor);
+      if (_cachedSponsor?.name) {
+        setSponsor(_cachedSponsor);
+        await showSponsorSplash(_cachedSponsor);
       }
       await initWallet(saved);
       return;

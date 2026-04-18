@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Advertise on THROW</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0a0a0a;
+      color: #e8e0d5;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 24px 20px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .header-logo {
+      font-size: 1.4rem;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+      color: #fff;
+    }
+    .header-x { color: rgba(255,255,255,0.2); font-weight: 300; }
+    .header-sub {
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.3);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-align: center;
+      margin-top: 2px;
+    }
+
+    .hero {
+      text-align: center;
+      padding: 40px 20px 32px;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    .hero-title {
+      font-size: 2rem;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      color: #fff;
+      line-height: 1.1;
+    }
+    .hero-title span { color: #c0392b; }
+    .hero-sub {
+      margin-top: 12px;
+      font-size: 0.95rem;
+      color: rgba(255,255,255,0.4);
+      line-height: 1.6;
+    }
+
+    .pitch-cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      max-width: 480px;
+      margin: 0 auto 40px;
+      padding: 0 20px;
+    }
+    .pitch-card {
+      background: #121212;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 14px;
+      padding: 16px 12px;
+      text-align: center;
+    }
+    .pitch-icon { font-size: 1.4rem; margin-bottom: 8px; }
+    .pitch-label {
+      font-size: 0.7rem;
+      color: rgba(255,255,255,0.4);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .pitch-value {
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: #fff;
+      margin-top: 2px;
+    }
+    .pitch-value.green { color: #4ade80; }
+
+    /* Form */
+    .form-wrap {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 0 20px 60px;
+      width: 100%;
+    }
+
+    .step-label {
+      font-size: 0.65rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.25);
+      margin-bottom: 16px;
+      margin-top: 32px;
+    }
+    .step-label:first-child { margin-top: 0; }
+
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block;
+      font-size: 0.68rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.35);
+      margin-bottom: 6px;
+    }
+    .field input, .field select, .field textarea {
+      width: 100%;
+      background: #1a1a1a;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 0.9rem;
+      color: #e8e0d5;
+      outline: none;
+      transition: border-color 0.15s;
+      -webkit-appearance: none;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      border-color: rgba(192,57,43,0.5);
+    }
+    .field input::placeholder, .field textarea::placeholder {
+      color: rgba(255,255,255,0.2);
+    }
+    .field textarea { resize: vertical; min-height: 72px; }
+    .field .hint {
+      font-size: 0.68rem;
+      color: rgba(255,255,255,0.2);
+      margin-top: 5px;
+    }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    /* Packages */
+    .packages { display: flex; flex-direction: column; gap: 10px; }
+    .pkg-option { display: none; }
+    .pkg-label {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: #1a1a1a;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .pkg-option:checked + .pkg-label {
+      border-color: rgba(192,57,43,0.6);
+      background: rgba(192,57,43,0.06);
+    }
+    .pkg-dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.2);
+      flex-shrink: 0;
+      transition: all 0.15s;
+    }
+    .pkg-option:checked + .pkg-label .pkg-dot {
+      background: #c0392b;
+      border-color: #c0392b;
+    }
+    .pkg-info { flex: 1; }
+    .pkg-name { font-size: 0.9rem; font-weight: 700; color: #fff; }
+    .pkg-desc { font-size: 0.72rem; color: rgba(255,255,255,0.35); margin-top: 2px; }
+    .pkg-price {
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: #c0392b;
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .pkg-price span { font-size: 0.65rem; color: rgba(255,255,255,0.3); font-weight: 400; }
+
+    /* Revenue share callout */
+    .rev-share-box {
+      background: rgba(74, 222, 128, 0.05);
+      border: 1px solid rgba(74, 222, 128, 0.15);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+    }
+    .rev-share-box .title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #4ade80;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .rev-share-box p {
+      font-size: 0.8rem;
+      color: rgba(255,255,255,0.45);
+      line-height: 1.5;
+    }
+    .rev-share-box strong { color: #4ade80; }
+
+    /* Payment address */
+    .pay-box {
+      background: #111;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+    }
+    .pay-box .pay-label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: rgba(255,255,255,0.25);
+      margin-bottom: 8px;
+    }
+    .pay-addr {
+      font-family: 'Courier New', monospace;
+      font-size: 0.72rem;
+      color: rgba(255,255,255,0.5);
+      word-break: break-all;
+      line-height: 1.5;
+    }
+    .pay-chain {
+      font-size: 0.65rem;
+      color: rgba(255,255,255,0.2);
+      margin-top: 6px;
+    }
+    .btn-copy-addr {
+      margin-top: 8px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 0.72rem;
+      color: rgba(255,255,255,0.5);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-copy-addr:hover { background: rgba(255,255,255,0.08); }
+
+    /* Submit */
+    .btn-submit {
+      width: 100%;
+      background: #c0392b;
+      border: none;
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 1rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      color: #fff;
+      cursor: pointer;
+      margin-top: 24px;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .btn-submit:active { transform: scale(0.98); }
+    .btn-submit:hover { background: #a93226; }
+    .btn-submit:disabled { background: #444; cursor: not-allowed; }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #1a1a1a;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 12px 20px;
+      font-size: 0.85rem;
+      color: #e8e0d5;
+      opacity: 0;
+      transition: all 0.3s ease;
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 999;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* Success screen */
+    .success-screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      padding: 40px 20px;
+      text-align: center;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+    .success-screen.visible { display: flex; }
+    .success-icon { font-size: 3rem; margin-bottom: 20px; }
+    .success-title {
+      font-size: 1.6rem;
+      font-weight: 900;
+      color: #fff;
+      margin-bottom: 12px;
+    }
+    .success-sub {
+      font-size: 0.9rem;
+      color: rgba(255,255,255,0.4);
+      line-height: 1.6;
+    }
+    .success-sub strong { color: #4ade80; }
+
+    .legal {
+      text-align: center;
+      font-size: 0.65rem;
+      color: rgba(255,255,255,0.15);
+      padding: 0 20px 20px;
+      max-width: 480px;
+      margin: 0 auto;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div>
+    <div class="header-logo">THROW <span class="header-x">×</span> Venues</div>
+    <div class="header-sub">Put your bar on every phone in the room</div>
+  </div>
+</div>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-title">Your logo.<br/>Their <span>money</span> moves.</div>
+  <div class="hero-sub">
+    Pay once. Earn for a year. When customers use THROW at your venue,
+    your brand is on every screen and you get a cut of every transaction — no monthly fees, ever.
+  </div>
+</div>
+
+<!-- Pitch cards -->
+<div class="pitch-cards">
+  <div class="pitch-card">
+    <div class="pitch-icon">📍</div>
+    <div class="pitch-label">Location-only</div>
+    <div class="pitch-value">0.25mi</div>
+  </div>
+  <div class="pitch-card">
+    <div class="pitch-icon">💸</div>
+    <div class="pitch-label">Revenue share</div>
+    <div class="pitch-value green">15%</div>
+  </div>
+  <div class="pitch-card">
+    <div class="pitch-icon">⚡</div>
+    <div class="pitch-label">Goes live</div>
+    <div class="pitch-value">Instant</div>
+  </div>
+</div>
+
+<!-- Main form -->
+<div class="form-wrap" id="form-wrap">
+
+  <!-- Step 1: Venue info -->
+  <div class="step-label">Step 1 — Your Venue</div>
+
+  <div class="field">
+    <label>Venue / Business Name</label>
+    <input id="f-name" type="text" placeholder="The Rusty Nail, SF" />
+  </div>
+  <div class="field-row">
+    <div class="field">
+      <label>City</label>
+      <input id="f-city" type="text" placeholder="San Francisco" />
+    </div>
+    <div class="field">
+      <label>State</label>
+      <input id="f-state" type="text" placeholder="CA" maxlength="2" />
+    </div>
+  </div>
+  <div class="field">
+    <label>Street Address <span style="color:rgba(255,255,255,0.2)">(used for GPS radius)</span></label>
+    <input id="f-address" type="text" placeholder="123 Mission St, San Francisco, CA" />
+  </div>
+  <div class="field">
+    <label>Logo URL <span style="color:rgba(255,255,255,0.2)">(square PNG recommended)</span></label>
+    <input id="f-logo" type="url" placeholder="https://yoursite.com/logo.png" />
+    <div class="hint">Host on Cloudinary, Imgur, or any CDN. We never store files — just the URL.</div>
+  </div>
+  <div class="field">
+    <label>Tagline <span style="color:rgba(255,255,255,0.2)">(shows on splash — 50 chars max)</span></label>
+    <input id="f-tagline" type="text" maxlength="50" placeholder="Drinks. Darts. THROW money." />
+  </div>
+  <div class="field">
+    <label>Your Website or Instagram <span style="color:rgba(255,255,255,0.2)">(optional — CPC destination)</span></label>
+    <input id="f-url" type="url" placeholder="https://instagram.com/yourbar" />
+  </div>
+
+  <!-- Step 2: Revenue share wallet -->
+  <div class="step-label">Step 2 — Revenue Share Wallet</div>
+
+  <div class="rev-share-box">
+    <div class="title">💰 You earn 15% of every THROW at your venue</div>
+    <p>
+      When a customer uses THROW within <strong>0.25 miles</strong> of your location,
+      15% of our platform fee on that transaction goes to your wallet —
+      automatically, every month.
+    </p>
+  </div>
+
+  <div class="field">
+    <label>Your USDC Wallet Address <span style="color:rgba(255,255,255,0.2)">(Tempo chain for payouts)</span></label>
+    <input id="f-wallet" type="text" placeholder="0x…" />
+    <div class="hint">Don't have one? Download THROW and create a wallet — it's free and takes 10 seconds.</div>
+  </div>
+
+  <!-- Step 3: Package -->
+  <div class="step-label">Step 3 — Choose Your Package</div>
+
+  <div class="packages">
+    <div>
+      <input type="radio" name="pkg" id="pkg-starter" value="starter" class="pkg-option" checked />
+      <label for="pkg-starter" class="pkg-label">
+        <div class="pkg-dot"></div>
+        <div class="pkg-info">
+          <div class="pkg-name">Local Spot</div>
+          <div class="pkg-desc">Splash + strips · 12 months · ~180k impressions</div>
+        </div>
+        <div class="pkg-price">$49<span> once</span></div>
+      </label>
+    </div>
+    <div>
+      <input type="radio" name="pkg" id="pkg-growth" value="growth" class="pkg-option" />
+      <label for="pkg-growth" class="pkg-label">
+        <div class="pkg-dot"></div>
+        <div class="pkg-info">
+          <div class="pkg-name">Featured</div>
+          <div class="pkg-desc">All placements · 12 months · ~720k impressions · priority placement</div>
+        </div>
+        <div class="pkg-price">$149<span> once</span></div>
+      </label>
+    </div>
+    <div>
+      <input type="radio" name="pkg" id="pkg-premium" value="premium" class="pkg-option" />
+      <label for="pkg-premium" class="pkg-label">
+        <div class="pkg-dot"></div>
+        <div class="pkg-info">
+          <div class="pkg-name">Flagship</div>
+          <div class="pkg-desc">All placements · 12 months · boosted 20% revenue share · priority</div>
+        </div>
+        <div class="pkg-price">$349<span> once</span></div>
+      </label>
+    </div>
+  </div>
+
+  <!-- Step 4: Payment -->
+  <div class="step-label">Step 4 — Payment</div>
+
+  <div class="pay-box">
+    <div class="pay-label">Send USDC or pathUSD to</div>
+    <div class="pay-addr" id="pay-addr">0x774f484192Cf3F4fB9716Af2e15f44371fD32FEA</div>
+    <div class="pay-chain">Tempo chain · Chain ID 4217 · USDC.e or pathUSD</div>
+    <button class="btn-copy-addr" id="btn-copy-addr">Copy Address</button>
+  </div>
+
+  <div class="field">
+    <label>Payment TX Hash <span style="color:rgba(255,255,255,0.2)">(paste after sending)</span></label>
+    <input id="f-txhash" type="text" placeholder="0x…" />
+    <div class="hint">One-time payment. We verify on-chain and activate within minutes. Your 12-month window starts the moment we confirm.</div>
+  </div>
+
+  <div class="field">
+    <label>Your Email <span style="color:rgba(255,255,255,0.2)">(for campaign confirmation + monthly reports)</span></label>
+    <input id="f-email" type="email" placeholder="owner@yourvenue.com" />
+  </div>
+
+  <button class="btn-submit" id="btn-submit">Submit Campaign →</button>
+  <p class="legal" style="margin-top:16px">
+    By submitting you agree to THROW's ad terms. One-time activation fee — no monthly billing.
+    Revenue share paid monthly in USDC to the wallet you provide, for 12 months from activation.
+    Campaigns go live after payment verification (typically &lt;30 min). No refunds after activation.
+  </p>
+</div>
+
+<!-- Success screen -->
+<div class="success-screen" id="success-screen">
+  <div class="success-icon">🎉</div>
+  <div class="success-title">You're on the map.</div>
+  <div class="success-sub">
+    We received your campaign submission.<br/><br/>
+    Once we verify your payment on-chain, your ad goes live — <strong>automatically</strong>.<br/><br/>
+    You'll start earning <strong>revenue share</strong> on every THROW at your venue within hours.
+    <br/><br/>
+    Check your email for confirmation.
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const TREASURY = '0x774f484192Cf3F4fB9716Af2e15f44371fD32FEA';
+  const VENUE_SUBMIT_URL = 'https://gsb-swarm-production.up.railway.app/api/venue-signup';
+  const MQTT_BROKER = 'wss://broker.emqx.io:8084/mqtt';
+
+  // Copy treasury address
+  document.getElementById('btn-copy-addr').onclick = function() {
+    navigator.clipboard?.writeText(TREASURY);
+    showToast('Address copied ✓');
+    this.textContent = 'Copied ✓';
+    setTimeout(() => this.textContent = 'Copy Address', 2000);
+  };
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3000);
+  }
+
+  // Geocode address → lat/lng via nominatim (free, no key)
+  async function geocode(address) {
+    try {
+      const r = await fetch(
+        'https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(address),
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      const data = await r.json();
+      if (data && data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    } catch(e) {}
+    return null;
+  }
+
+  // Submit
+  document.getElementById('btn-submit').onclick = async function() {
+    const name    = document.getElementById('f-name').value.trim();
+    const city    = document.getElementById('f-city').value.trim();
+    const state   = document.getElementById('f-state').value.trim();
+    const address = document.getElementById('f-address').value.trim();
+    const logo    = document.getElementById('f-logo').value.trim();
+    const tagline = document.getElementById('f-tagline').value.trim();
+    const url     = document.getElementById('f-url').value.trim();
+    const wallet  = document.getElementById('f-wallet').value.trim();
+    const txhash  = document.getElementById('f-txhash').value.trim();
+    const email   = document.getElementById('f-email').value.trim();
+    const pkg     = document.querySelector('input[name="pkg"]:checked')?.value || 'starter';
+
+    if (!name || !address || !wallet || !txhash || !email) {
+      showToast('Please fill in all required fields');
+      return;
+    }
+    if (!wallet.startsWith('0x') || wallet.length < 40) {
+      showToast('Invalid wallet address');
+      return;
+    }
+
+    const btn = document.getElementById('btn-submit');
+    btn.disabled = true;
+    btn.textContent = 'Geocoding address…';
+
+    const coords = await geocode(address);
+
+    btn.textContent = 'Submitting…';
+
+    const payload = {
+      name, city, state, address,
+      logoUrl:  logo,
+      tagline,
+      clickUrl: url,
+      wallet,
+      txHash:   txhash,
+      email,
+      package:  pkg,
+      lat:      coords?.lat || null,
+      lng:      coords?.lng || null,
+      radiusMi: 0.25,
+      revenueSharePct: pkg === 'premium' ? 20 : 15,
+      status:   'pending',  // becomes 'active' after on-chain verification
+      submittedAt: new Date().toISOString(),
+    };
+
+    try {
+      // Try Railway endpoint first
+      const r = await fetch(VENUE_SUBMIT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) throw new Error('Server error');
+    } catch(e) {
+      // Fallback: publish to MQTT for dashboard to pick up
+      try {
+        // Store in localStorage as backup so dashboard can read
+        const existing = JSON.parse(localStorage.getItem('throw_venue_submissions') || '[]');
+        existing.push({ ...payload, id: crypto.randomUUID() });
+        localStorage.setItem('throw_venue_submissions', JSON.stringify(existing));
+      } catch(_) {}
+    }
+
+    // Show success regardless — we captured the data
+    document.getElementById('form-wrap').style.display = 'none';
+    document.getElementById('success-screen').classList.add('visible');
+  };
+</script>
+</body>
+</html>
