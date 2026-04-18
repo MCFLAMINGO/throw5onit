@@ -498,7 +498,188 @@ function subscribeDemoCredits(myAddr) {
         upsertContact(data.fromName, data.fromAddr);
         showToast('👋 ' + data.fromName + ' added you — added back!');
       }
+      // Sponsor push via MQTT — update active sponsor for this session
+      if (data.event === 'sponsor_push') {
+        const sp = data.sponsor || null;
+        try { localStorage.setItem('throw_active_sponsor', JSON.stringify(sp)); } catch(_) {}
+        setSponsor(sp);
+      }
     } catch(_) {}
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   SPONSOR AD SYSTEM
+   ══════════════════════════════════════════════════════════════════ */
+
+// Active sponsor state
+let _activeSponsor = null;  // { name, logoUrl, tagline, color }
+let _stripAnimFrame = null;
+let _stripOffset = 0;
+let _stripItemHeight = 40; // px per item including gap
+let _stripItems = [];       // array of { name, logoUrl }
+let _stripCenterIdx = 0;
+let _stripScrollInterval = null;
+let _nudgeTimer = null;
+
+// Default house brands for strips when no paid sponsor
+const HOUSE_BRANDS = [
+  { name: 'THROW', text: '\u{1F4B8}' },
+  { name: '$$$',   text: '$' },
+  { name: 'THROW', text: '\u26A1' },
+  { name: 'TEMPO', text: 'T' },
+  { name: 'THROW', text: '\u{1F3B0}' },
+  { name: '$$$',   text: '\u{1F911}' },
+];
+
+function setSponsor(sponsor) {
+  _activeSponsor = sponsor;
+  renderOrbSponsor();
+  renderSponsorStrips();
+}
+
+// Render sponsor logo in orb background
+function renderOrbSponsor() {
+  const bg = document.getElementById('orb-sponsor-bg');
+  if (!bg) return;
+  if (_activeSponsor?.logoUrl) {
+    bg.innerHTML = `<img src="${_activeSponsor.logoUrl}" alt="${_activeSponsor.name}" />`;
+    bg.classList.add('visible');
+  } else {
+    bg.innerHTML = '';
+    bg.classList.remove('visible');
+  }
+}
+
+// Build and start the vertical scrolling strips
+function renderSponsorStrips() {
+  ['left', 'right'].forEach(side => {
+    const track = document.getElementById('sponsor-track-' + side);
+    if (!track) return;
+    track.innerHTML = '';
+    clearInterval(_stripScrollInterval);
+
+    // Build item list — sponsor brand repeated + house brands as filler
+    const items = [];
+    if (_activeSponsor) {
+      // Paid sponsor: interleave their logo with house brand separators
+      for (let i = 0; i < 4; i++) items.push({ ..._activeSponsor, paid: true });
+      HOUSE_BRANDS.forEach(b => items.push(b));
+    } else {
+      HOUSE_BRANDS.forEach(b => items.push(b));
+    }
+    // Double the list for seamless infinite loop
+    const doubled = [...items, ...items];
+    _stripItems = doubled;
+
+    doubled.forEach((item, idx) => {
+      const el = document.createElement('div');
+      el.className = 'sponsor-item' + (item.text ? ' sponsor-text' : '');
+      el.dataset.idx = idx;
+      el.dataset.name = item.name || '';
+      if (item.logoUrl) {
+        const img = document.createElement('img');
+        img.src = item.logoUrl;
+        img.alt = item.name || '';
+        el.appendChild(img);
+      } else {
+        el.textContent = item.text || item.name?.slice(0,3) || '$';
+      }
+      // Click = CPC event
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        logSponsorEvent('click', item);
+        if (item.url) window.open(item.url, '_blank', 'noopener');
+      });
+      track.appendChild(el);
+    });
+
+    // CSS animation for smooth infinite scroll
+    const totalItems = items.length;
+    const itemH = 40; // 28px item + 12px gap
+    const totalH = totalItems * itemH;
+    track.style.animation = 'none';
+    track.style.transform = 'translateY(0)';
+    // Use CSS animation on the track
+    track.style.animation = `stripScroll ${totalItems * 1.4}s linear infinite`;
+    track.style.setProperty('--strip-half', `-${totalH}px`);
+  });
+
+  // Add CSS custom property animation target if not set
+  if (!document.getElementById('strip-scroll-style')) {
+    const s = document.createElement('style');
+    s.id = 'strip-scroll-style';
+    s.textContent = `@keyframes stripScroll { 0% { transform: translateY(0); } 100% { transform: translateY(var(--strip-half)); } }`;
+    document.head.appendChild(s);
+  }
+}
+
+// Log sponsor analytics event via MQTT
+function logSponsorEvent(type, item) {
+  // type: 'impression' | 'click' | 'throw_coincidence'
+  const payload = {
+    event:     'sponsor_event',
+    type,
+    sponsor:   item?.name || 'house',
+    paid:      !!item?.paid,
+    addr:      state.account?.address || 'anon',
+    ts:        Date.now(),
+  };
+  // Publish to analytics topic (fire-and-forget)
+  try {
+    const c = mqtt.connect(MQTT_BROKER, {
+      clientId: 'sp_' + Math.random().toString(36).slice(2,8),
+      clean: true, connectTimeout: 4000, reconnectPeriod: 0,
+    });
+    c.on('connect', () => {
+      c.publish('throw/sponsor/analytics', JSON.stringify(payload), { qos: 0 }, () => c.end(true));
+    });
+  } catch(_) {}
+}
+
+// Show post-throw sponsor credit line
+function showThrowSponsorCredit(sponsorName) {
+  const el = document.getElementById('throw-sponsor-credit');
+  if (!el || !sponsorName) return;
+  el.textContent = 'Throw powered by ' + sponsorName;
+  el.classList.remove('hidden');
+  el.style.opacity = '1';
+  setTimeout(() => {
+    el.style.opacity = '0';
+    setTimeout(() => el.classList.add('hidden'), 500);
+  }, 3000);
+}
+
+// Show sponsor splash for returning users — resolves after display
+function showSponsorSplash(sponsor) {
+  return new Promise(resolve => {
+    // Populate
+    const nameEl = document.getElementById('spsplash-name');
+    const logoEl = document.getElementById('spsplash-logo');
+    const tagEl  = document.getElementById('spsplash-tagline');
+    const bar    = document.getElementById('spsplash-bar');
+    if (nameEl) nameEl.textContent = sponsor.name || 'THROW';
+    if (tagEl && sponsor.tagline) tagEl.textContent = sponsor.tagline;
+    if (logoEl) {
+      if (sponsor.logoUrl) {
+        logoEl.innerHTML = `<img src="${sponsor.logoUrl}" alt="${sponsor.name}" />`;
+      } else {
+        logoEl.textContent = sponsor.name?.slice(0,2) || 'T';
+        logoEl.style.fontSize = '1.2rem';
+        logoEl.style.fontWeight = '900';
+        logoEl.style.color = '#fff';
+      }
+    }
+    showScreen('sponsor-splash');
+    // Start progress bar
+    requestAnimationFrame(() => { if (bar) bar.classList.add('running'); });
+    let done = false;
+    const finish = () => { if (done) return; done = true; resolve(); };
+    // Skip button
+    const skipBtn = document.getElementById('btn-spsplash-skip');
+    if (skipBtn) skipBtn.onclick = finish;
+    // Auto-advance after 5s
+    setTimeout(finish, 5000);
   });
 }
 
@@ -1338,7 +1519,10 @@ async function executeProximityThrow(target) {
     if (state.inRoom) publishThrow(fromAddr, target.addr, amount);
     touchContact(target.addr);
     points.add(amount);
-    showTxFlash('✅', '$' + amount, 'Thrown to ' + target.name + '!');
+    showTxFlash('\u2705', '$' + amount, 'Thrown to ' + target.name + '!');
+    // Log throw-coincidence if a paid sponsor is active
+    if (_activeSponsor?.paid) logSponsorEvent('throw_coincidence', _activeSponsor);
+    showThrowSponsorCredit(_activeSponsor?.name || null);
     await refreshBalances();
     setTimeout(() => { hideTxFlash(); showScreen('wallet'); }, 1800);
   } catch(e) {
@@ -1360,6 +1544,8 @@ function openThrowScreen(preselect) {
   state.throwTarget = preselect || null;
   renderThrowContacts(preselect);
   setupThrowScreen();
+  renderOrbSponsor();
+  renderSponsorStrips();
   showScreen('throw');
 }
 
@@ -3405,7 +3591,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Normal load — check for existing wallet
     const saved = await loadWallet();
     if (saved) {
-      // Returning user — go straight to wallet
+      // Returning user — check for active sponsor, show splash if one exists
+      const _pendingSponsor = (() => {
+        try { return JSON.parse(localStorage.getItem('throw_active_sponsor') || 'null'); } catch(_) { return null; }
+      })();
+      if (_pendingSponsor && _pendingSponsor.name) {
+        setSponsor(_pendingSponsor);
+        await showSponsorSplash(_pendingSponsor);
+      }
       await initWallet(saved);
       return;
     }

@@ -40,6 +40,29 @@
 </div>
 
 <!-- ═══ SCREEN: SPLASH (shown to everyone on first open) ══════════════════ -->
+<!-- ═══ SCREEN: SPONSOR SPLASH (returning users only) ══════════════════════ -->
+<div id="screen-sponsor-splash" class="screen">
+  <div class="spsplash-inner">
+    <div class="spsplash-top">
+      <div class="spsplash-throw-icon">
+        <img src="icon-512.png" class="spsplash-app-icon" alt="THROW" />
+        <div class="spsplash-wordmark">THROW</div>
+      </div>
+      <div class="spsplash-sponsor-lockup" id="spsplash-lockup">
+        <span class="spsplash-x">×</span>
+        <div class="spsplash-sponsor-logo" id="spsplash-logo"></div>
+        <div class="spsplash-sponsor-name" id="spsplash-name">Ferrari</div>
+      </div>
+    </div>
+    <div class="spsplash-tagline" id="spsplash-tagline">The fastest way to move money.</div>
+    <div class="spsplash-bar-wrap">
+      <div class="spsplash-bar" id="spsplash-bar"></div>
+    </div>
+    <button class="spsplash-skip" id="btn-spsplash-skip">Skip →</button>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: SPLASH ══════════════════════════════════════════════════════ -->
 <div id="screen-splash" class="screen">
   <div class="splash-inner">
     <img src="icon-512.png" class="splash-icon" alt="THROW" />
@@ -432,16 +455,33 @@
     <div class="throw-fee-line" id="throw-fee-line">$0.15 fee — recipient gets $4.85</div>
 
     <!-- STEP 3: THROW ORB — hold + flick fires all methods simultaneously -->
-    <div class="throw-orb-wrap" id="throw-orb-wrap">
-      <div class="throw-orb" id="throw-orb">
-        <div class="throw-orb-ring" id="throw-orb-ring"></div>
-        <div class="throw-orb-charge" id="throw-orb-charge"></div>
-        <div class="throw-orb-label" id="throw-orb-label">$5</div>
-        <div class="throw-orb-hint" id="throw-orb-hint">Hold &amp; flick</div>
+    <div class="throw-orb-arena" id="throw-orb-arena">
+      <!-- Left sponsor strip -->
+      <div class="sponsor-strip sponsor-strip-left" id="sponsor-strip-left" aria-label="Sponsored">
+        <div class="sponsor-strip-track" id="sponsor-track-left"></div>
       </div>
-      <div class="throw-orb-sub" id="throw-orb-sub">Select friend above · hold · flick to throw</div>
-      <button class="btn-tap-throw hidden" id="btn-tap-throw">TAP TO THROW</button>
+
+      <div class="throw-orb-wrap" id="throw-orb-wrap">
+        <div class="throw-orb" id="throw-orb">
+          <div class="throw-orb-ring" id="throw-orb-ring"></div>
+          <div class="throw-orb-charge" id="throw-orb-charge"></div>
+          <!-- Sponsor logo layer — sits behind label -->
+          <div class="orb-sponsor-bg" id="orb-sponsor-bg"></div>
+          <div class="throw-orb-label" id="throw-orb-label">$5</div>
+          <div class="throw-orb-hint" id="throw-orb-hint">Hold &amp; flick</div>
+        </div>
+        <div class="throw-orb-sub" id="throw-orb-sub">Select friend above · hold · flick to throw</div>
+        <button class="btn-tap-throw hidden" id="btn-tap-throw">TAP TO THROW</button>
+      </div>
+
+      <!-- Right sponsor strip -->
+      <div class="sponsor-strip sponsor-strip-right" id="sponsor-strip-right" aria-label="Sponsored">
+        <div class="sponsor-strip-track" id="sponsor-track-right"></div>
+      </div>
     </div>
+
+    <!-- Post-throw sponsor attribution (fades in after throw, auto-hides) -->
+    <div class="throw-sponsor-credit hidden" id="throw-sponsor-credit"></div>
 
     <!-- LAST RESORT: paste wallet address -->
     <div class="throw-addr-fallback" id="throw-addr-row">
