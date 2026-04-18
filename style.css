@@ -4013,7 +4013,7 @@ body:has(.demo-banner:not(.hidden)) .screen {
 .wallet-arena {
   display: flex;
   flex-direction: row;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   width: 100%;
   gap: 4px;
@@ -4025,6 +4025,11 @@ body:has(.demo-banner:not(.hidden)) .screen {
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+/* Strips only as tall as the balance area — don’t overlap buttons */
+.wallet-arena .sponsor-strip {
+  height: 212px; /* 2 full tiles visible */
+  margin-top: 16px;
 }
 .sponsor-strip {
   width: 88px;
