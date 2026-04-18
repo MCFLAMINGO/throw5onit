@@ -410,7 +410,6 @@ async function initWallet(acc, isNew = false) {
   }
 
   try { subscribeDemoCredits(state.account.address); } catch(_) {}
-  try { subscribeSponsorChannel(); } catch(_) {}
   try { renderDemoBanner(); } catch(_) {}
 
   // Restore active bet if host reloaded mid-bet — defer until after DOM is fully ready
@@ -568,6 +567,16 @@ function setSponsor(sponsor) {
   _activeSponsor = sponsor;
   renderOrbSponsor();
   renderSponsorStrips();
+  // If sponsor splash is currently visible, update its logo live
+  const splashScreen = document.getElementById('screen-sponsor-splash');
+  const logoEl = document.getElementById('spsplash-logo');
+  if (splashScreen && splashScreen.classList.contains('active') && logoEl && sponsor?.logoUrl) {
+    logoEl.innerHTML = `<img src="${sponsor.logoUrl}" alt="${sponsor.name || ''}" />`;
+    const nameEl = document.getElementById('spsplash-name');
+    const tagEl  = document.getElementById('spsplash-tagline');
+    if (nameEl && sponsor.name) nameEl.textContent = sponsor.name;
+    if (tagEl  && sponsor.tagline) tagEl.textContent = sponsor.tagline;
+  }
 }
 
 // Render sponsor logo in orb background
@@ -2162,6 +2171,11 @@ function clearPendingBetButton() {
   const label = btn?.querySelector('span');
   if (!btn) return;
   btn.classList.remove('bet-pending');
+  // Clear any inline styles set during join flow so CSS classes take over cleanly
+  btn.style.background  = '';
+  btn.style.boxShadow   = '';
+  btn.style.opacity     = '';
+  btn.style.pointerEvents = '';
   if (label) label.textContent = 'THROW';
   btn.onclick = openThrowScreen;
 }
@@ -2710,6 +2724,9 @@ async function executePlayerBetJoin() {
                 'Pot: $' + ((data.pot || 0).toFixed(2)) + ' | ' + ((data.structure || '').replace('-', ' ').toUpperCase());
               if (won) moneyRain(8);
               state.bet.active = false;
+              state.bet.joined = false;
+              state.bet.joinedEscrow = null;
+              clearPendingBetButton(); // resets inline styles + restores THROW button
               setTimeout(() => refreshBalances(), 3000);
             }
           },
@@ -3761,19 +3778,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     const saved = await loadWallet();
     if (saved) {
       // Returning user — resolve sponsor (venue GPS first, global fallback)
-      // Run GPS check in background, don't block wallet load on it
       resolveActiveSponsor().then(sponsor => {
         if (sponsor) setSponsor(sponsor);
       }).catch(() => {});
-      // Show splash only if we have a cached sponsor (GPS check is async — splash fires after)
-      const _cachedSponsor = (() => {
+      // Get cached sponsor — if empty, wait up to 1.5s for MQTT retained message
+      let _cachedSponsor = (() => {
         try { return JSON.parse(localStorage.getItem('throw_active_sponsor') || 'null'); } catch(_) { return null; }
       })();
+      if (!_cachedSponsor?.name) {
+        // Poll for up to 2s for MQTT retained message to arrive
+        await new Promise(resolve => {
+          const start = Date.now();
+          const poll = setInterval(() => {
+            if (_activeSponsor?.name || Date.now() - start > 2000) {
+              clearInterval(poll);
+              resolve();
+            }
+          }, 100);
+        });
+        _cachedSponsor = _activeSponsor || (() => {
+          try { return JSON.parse(localStorage.getItem('throw_active_sponsor') || 'null'); } catch(_) { return null; }
+        })();
+      }
       if (_cachedSponsor?.name) {
         setSponsor(_cachedSponsor);
-        // Cancel hard-kill timer — we control boot loader hide ourselves
         clearTimeout(_bootKillTimer);
-        // Hide boot loader, then show sponsor splash
         hideBootLoader();
         await showSponsorSplash(_cachedSponsor);
       }

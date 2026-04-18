@@ -1,4 +1,4 @@
-const VERSION = 'v104';
+const VERSION = 'v113';
 const CACHE   = 'throw-' + VERSION;
 
 const ASSETS = [
@@ -31,6 +31,11 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
+  // Pass external requests (CDN images, APIs) straight through — never cache them
+  if (!e.request.url.startsWith(self.location.origin)) {
+    e.respondWith(fetch(e.request));
+    return;
+  }
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request))
   );
