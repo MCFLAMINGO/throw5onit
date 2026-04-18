@@ -410,6 +410,7 @@ async function initWallet(acc, isNew = false) {
   }
 
   try { subscribeDemoCredits(state.account.address); } catch(_) {}
+  try { subscribeSponsorChannel(); } catch(_) {}
   try { renderDemoBanner(); } catch(_) {}
 
   // Restore active bet if host reloaded mid-bet — defer until after DOM is fully ready
@@ -461,6 +462,25 @@ async function initWallet(acc, isNew = false) {
       } catch(_) {}
     }, 800);
   }
+}
+
+// Subscribe to global sponsor broadcast channel (throw/sponsor, retained)
+// Called at page load — no wallet required. Gets retained message from broker immediately.
+function subscribeSponsorChannel() {
+  try {
+    const clientId = 'throw_spn_' + Math.random().toString(36).slice(2, 8);
+    const c = mqtt.connect(MQTT_BROKER, { clientId, clean: true, connectTimeout: 8000, reconnectPeriod: 0 });
+    c.on('connect', () => c.subscribe('throw/sponsor', { qos: 0 }));
+    c.on('message', (_t, msg) => {
+      try {
+        const data = JSON.parse(msg.toString());
+        const sp = data.sponsor || null;
+        try { localStorage.setItem('throw_active_sponsor', JSON.stringify(sp)); } catch(_) {}
+        setSponsor(sp);
+      } catch(_) {}
+    });
+    c.on('error', () => {});
+  } catch(_) {}
 }
 
 function subscribeDemoCredits(myAddr) {
@@ -3347,6 +3367,9 @@ function hideBootLoader() {
 setTimeout(hideBootLoader, 4000);
 
 document.addEventListener('DOMContentLoaded', async () => {
+
+  // Subscribe to global sponsor channel immediately — retained message arrives within ~1s
+  try { subscribeSponsorChannel(); } catch(_) {}
 
   /* ── Handle gifted wallet URL params ── */
   const _urlParams = new URLSearchParams(window.location.search);
