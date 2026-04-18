@@ -4020,8 +4020,8 @@ body:has(.demo-banner:not(.hidden)) .screen {
   position: relative;
 }
 .wallet-arena-center {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 auto;
+  width: min(320px, calc(100vw - 196px));
   display: flex;
   flex-direction: column;
   align-items: center;
