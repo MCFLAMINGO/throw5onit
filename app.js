@@ -3815,11 +3815,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         try { return JSON.parse(localStorage.getItem('throw_all_sponsors') || '[]'); } catch(_) { return []; }
       })();
       if (!_cachedSponsor?.name) {
-        // Poll for up to 2s for MQTT retained message to arrive
+        // Poll for up to 3s for MQTT retained message to arrive
         await new Promise(resolve => {
           const start = Date.now();
           const poll = setInterval(() => {
-            if (_activeSponsor?.name || Date.now() - start > 2000) {
+            if (_activeSponsor?.name || Date.now() - start > 3000) {
               clearInterval(poll);
               resolve();
             }
@@ -3829,7 +3829,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           try { return JSON.parse(localStorage.getItem('throw_active_sponsor') || 'null'); } catch(_) { return null; }
         })();
       }
-      if (_cachedSponsor?.name) {
+      // Show splash on every session open (not just cold cache)
+      const splashShownThisSession = sessionStorage.getItem('throw_splash_shown');
+      if (_cachedSponsor?.name && !splashShownThisSession) {
+        sessionStorage.setItem('throw_splash_shown', '1');
         setSponsor(_cachedSponsor);
         clearTimeout(_bootKillTimer);
         hideBootLoader();
