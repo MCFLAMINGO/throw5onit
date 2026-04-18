@@ -2671,6 +2671,12 @@ function showSettledScreen(hostWon, pot, results) {
     `Pot: $${pot.toFixed(2)} | ${state.bet.structure.replace('-', ' ').toUpperCase()} | ${state.bet.players.length} player${state.bet.players.length !== 1 ? 's' : ''}`;
 
   if (hostWon) moneyRain(8);
+
+  // Always reset bet button state after settlement
+  state.bet.joined      = false;
+  state.bet.joinedEscrow = null;
+  state.bet.isHost      = false;
+  clearPendingBetButton();
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
