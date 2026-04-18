@@ -2513,15 +2513,16 @@ async function settleBet(hostWon) {
       // ── DEMO SETTLEMENT: no on-chain tx needed, just credit demo balances ──
       const fakeHash = () => '0xDEMO' + Math.random().toString(16).slice(2,14).toUpperCase();
 
+      const myAddrLc = state.account?.address?.toLowerCase();
       const payTo = (addr, amount) => {
-        // If it's our own address, credit locally too
-        if (addr.toLowerCase() === hostAddr.toLowerCase()) {
+        // Credit locally if it's any address on THIS device (host or player)
+        if (addr.toLowerCase() === myAddrLc) {
           state.total   = (state.total || 0) + amount;
           state.pathUSD = state.total;
           try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
           renderWalletUI();
         }
-        // Always fire global MQTT credit so the recipient's device updates
+        // Also fire MQTT so other devices get credited
         _demoCreditGlobal(addr, amount, fakeHash());
         return Promise.resolve();
       };
