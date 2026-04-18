@@ -10,13 +10,19 @@
 let ethersLib = null;
 async function getViem() {
   if (ethersLib) return ethersLib;
+  // Bundle sets window.__ethers__ = the ethers namespace object directly
+  // All callers do: const { ethers } = await getViem()
+  // So we must return { ethers: <namespace> }
   if (typeof window.__ethers__ !== 'undefined') {
-    ethersLib = window.__ethers__;
+    ethersLib = { ethers: window.__ethers__ };
     return ethersLib;
   }
-  // Fallback: dynamic import from local file
+  // Fallback: dynamic import — bundle may also export as default or named
   try {
-    ethersLib = await import('./ethers.bundle.js');
+    const mod = await import('./ethers.bundle.js');
+    // mod may be the namespace directly or { default: namespace }
+    const ns = mod.ethers || mod.default || mod;
+    ethersLib = { ethers: ns };
     return ethersLib;
   } catch(e) {
     console.error('[THROW] ethers bundle failed to load:', e);

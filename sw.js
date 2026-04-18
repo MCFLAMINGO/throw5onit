@@ -1,4 +1,4 @@
-const VERSION = 'v94';
+const VERSION = 'v95';
 const CACHE   = 'throw-' + VERSION;
 
 const ASSETS = [
