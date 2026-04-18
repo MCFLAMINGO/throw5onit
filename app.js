@@ -585,8 +585,11 @@ function renderOrbSponsor() {
 
 // Build and start the vertical scrolling strips
 function renderSponsorStrips() {
-  ['left', 'right'].forEach(side => {
-    const track = document.getElementById('sponsor-track-' + side);
+  // Populate both throw-screen strips AND wallet-screen strips
+  const trackIds = ['sponsor-track-left', 'sponsor-track-right', 'wallet-track-left', 'wallet-track-right'];
+  trackIds.forEach(trackId => {
+    const side = trackId.includes('right') ? 'right' : 'left';
+    const track = document.getElementById(trackId);
     if (!track) return;
     track.innerHTML = '';
     clearInterval(_stripScrollInterval);
@@ -1105,6 +1108,9 @@ function renderWalletUI() {
   // Always keep THROW enabled — balance may be loading
   document.getElementById('btn-throw').style.opacity = '1';
   document.getElementById('btn-throw').disabled = false;
+
+  // Render sponsor strips on wallet screen
+  try { renderSponsorStrips(); } catch(_) {}
 }
 
 /* ═══════════════════════════════════════════════════════════════════════

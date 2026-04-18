@@ -4009,6 +4009,27 @@ body:has(.demo-banner:not(.hidden)) .screen {
   width: 100%;
   position: relative;
 }
+/* Wallet home screen — strips flank balance + action grid */
+.wallet-arena {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  gap: 0;
+  position: relative;
+}
+.wallet-arena-center {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.wallet-arena .sponsor-strip {
+  height: 320px;
+  align-self: center;
+}
 .sponsor-strip {
   width: 36px;
   height: 220px;
