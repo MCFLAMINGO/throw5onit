@@ -140,7 +140,8 @@ function _demoCreditGlobal(toAddr, amount, hash) {
     const c = mqtt.connect(MQTT_BROKER, { clientId, clean: true, connectTimeout: 6000, reconnectPeriod: 0 });
     c.on('connect', () => {
       const msg = JSON.stringify({ event: 'demo_credit', to: toAddr, from: state.account?.address, amount, hash, ts: Date.now() });
-      c.publish('throw5/wallet/' + toAddr.toLowerCase() + '/credit', msg, { qos: 0 }, () => {
+      // QoS 1 + retain so late-connecting devices still get the credit
+      c.publish('throw5/wallet/' + toAddr.toLowerCase() + '/credit', msg, { qos: 1, retain: true }, () => {
         try { c.end(true); } catch(_) {}
       });
     });
@@ -540,7 +541,7 @@ function subscribeDemoCredits(myAddr) {
   const topic = 'throw5/wallet/' + myAddr.toLowerCase() + '/credit';
   const clientId = 'throw_sub_' + Math.random().toString(36).slice(2,8);
   const c = mqtt.connect(MQTT_BROKER, { clientId, clean: true, connectTimeout: 8000, reconnectPeriod: 3000 });
-  c.on('connect', () => c.subscribe(topic, { qos: 0 }));
+  c.on('connect', () => c.subscribe(topic, { qos: 1 }));
   c.on('message', (_t, msg) => {
     try {
       const data = JSON.parse(msg.toString());
@@ -558,6 +559,8 @@ function subscribeDemoCredits(myAddr) {
             state.pathUSD  = state.total;
             try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
             renderWalletUI();
+            // Clear the retained message so it doesn't re-credit on next app open
+            try { c.publish('throw5/wallet/' + myAddrLc + '/credit', '', { qos: 1, retain: true }); } catch(_) {}
           }
           // Show flash notification
           showTxFlash('💸', '$' + amt.toFixed(2), fromName + ' threw you $' + amt.toFixed(2) + '!');
