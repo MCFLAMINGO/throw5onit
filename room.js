@@ -209,10 +209,15 @@ function publishBetSettled(hostAddr, hostWon, pot, structure, yesWon) {
     structure,
     ts:        Date.now(),
   });
-  // Retain false on settled so new joiners don’t get a stale settled event
-  room.client.publish(ROOM_PREFIX + room.code + '/bet', msg, { qos: 1 });
-  // Clear the retained bet_open
-  room.client.publish(ROOM_PREFIX + room.code + '/bet', '', { qos: 1, retain: true });
+  const betTopic = ROOM_PREFIX + room.code + '/bet';
+  // Publish settlement first; delay the retained-clear so any player whose
+  // subscription just came live receives the message before the empty
+  // retained payload overwrites it on the broker.
+  room.client.publish(betTopic, msg, { qos: 1 }, () => {
+    setTimeout(() => {
+      if (room.client) room.client.publish(betTopic, '', { qos: 1, retain: true });
+    }, 600);
+  });
 }
 
 /* ── Find best target based on compass heading ── */
@@ -347,7 +352,13 @@ function _globalPublish(topic, msg, opts) {
   const clientId = 'throw_pub_' + Math.random().toString(36).slice(2, 10);
   const c = mqtt.connect(MQTT_BROKER, { clientId, clean: true, connectTimeout: 6000, reconnectPeriod: 0 });
   c.on('connect', () => {
-    c.publish(topic, msg, opts, () => { try { c.end(true); } catch(_) {} });
+    // Ensure QoS 1 minimum so we wait for PUBACK before tearing down the client.
+    // Brief hold after callback so broker can relay to any subscribers.
+    const safeOpts = { ...opts, qos: Math.max((opts && opts.qos) || 0, 1) };
+    c.publish(topic, msg, safeOpts, (err) => {
+      if (err) console.warn('[ROOM] _globalPublish failed:', err.message);
+      setTimeout(() => { try { c.end(true); } catch(_) {} }, 300);
+    });
   });
   c.on('error', () => { try { c.end(true); } catch(_) {} });
 }
