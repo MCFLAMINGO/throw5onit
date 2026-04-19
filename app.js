@@ -4397,13 +4397,17 @@ function startPokerGame(seats, roomCode) {
   p.currentSeat = (p.bbIdx + 1) % seats.length;
   p.lastRaiser = p.bbIdx;
 
-  // Debit blinds locally if host is SB or BB (demo only — live money would need sendStablecoin to escrow)
+  // Post blinds — demo debits locally, live sends real money to escrow
+  const myLc = p.myAddr.toLowerCase();
   if (DEMO_MODE) {
-    const myLc = p.myAddr.toLowerCase();
     if (sb.addr.toLowerCase() === myLc) { state.total = Math.max(0, state.total - sbAmt); state.pathUSD = state.total; }
     if (bb.addr.toLowerCase() === myLc) { state.total = Math.max(0, state.total - bbAmt); state.pathUSD = state.total; }
     try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
     renderWalletUI();
+  } else {
+    // Live: host posts blind(s) they owe directly into escrow
+    if (sb.addr.toLowerCase() === myLc && sbAmt > 0) sendStablecoin(state.bet.escrowAddr, sbAmt).catch(()=>{});
+    if (bb.addr.toLowerCase() === myLc && bbAmt > 0) sendStablecoin(state.bet.escrowAddr, bbAmt).catch(()=>{});
   }
 
   _publishPoker({
@@ -4413,6 +4417,7 @@ function startPokerGame(seats, roomCode) {
     street: p.street,
     currentSeat: p.currentSeat,
     roomCode: p.roomCode,
+    escrowAddr: state.bet.escrowAddr || null,
     ts: Date.now(),
   });
 
@@ -4460,12 +4465,18 @@ function pokerHandleAction(action, amount) {
     newStack = seat.stack - add;
   }
 
-  // Debit demo balance locally for chipping in
-  if (DEMO_MODE && add > 0) {
-    state.total = Math.max(0, state.total - add);
-    state.pathUSD = state.total;
-    try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
-    renderWalletUI();
+  // Money moves: demo debits locally, live sends to shared escrow (the pot)
+  if (add > 0) {
+    if (DEMO_MODE) {
+      state.total = Math.max(0, state.total - add);
+      state.pathUSD = state.total;
+      try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
+      renderWalletUI();
+    } else {
+      // Live: call/raise sends exact amount into the shared escrow wallet
+      const escrow = p.escrowAddr || state.bet.escrowAddr;
+      if (escrow) sendStablecoin(escrow, add).catch(()=>{});
+    }
   }
 
   _publishPoker({
@@ -4575,8 +4586,9 @@ function pokerSettle(winnerAddr) {
     ts: Date.now(),
   });
 
-  // Pay winner: demo credits locally, live uses settleBet path pattern
+  // Pay winner
   if (DEMO_MODE) {
+    // Demo: credit locally if it's me, otherwise push via MQTT demo_credit
     const myLc = p.myAddr.toLowerCase();
     if (winner.addr.toLowerCase() === myLc) {
       state.total = (state.total || 0) + p.pot;
@@ -4584,15 +4596,22 @@ function pokerSettle(winnerAddr) {
       try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
       renderWalletUI();
     }
-    // Credit other device via MQTT demo topic
     try {
       const fakeHash = '0xPOKER' + Math.random().toString(16).slice(2,12).toUpperCase();
       _demoCreditGlobal(winner.addr, p.pot, fakeHash);
     } catch(_) {}
   } else {
-    // Live: winner-all payout via sendStablecoin from escrow (if available) — reuse settleBet pattern
-    // For simplicity, leave on-chain payout as a follow-up if escrow is wired. Demo covers the flow.
-    try { sendStablecoin(winner.addr, p.pot); } catch(_) {}
+    // Live: drain escrow to winner using existing sponsor-tx path
+    // 3% rake to treasury first, remainder to winner
+    const escrowPK = state.bet.escrowKey;
+    if (escrowPK) {
+      const fee = parseFloat((p.pot * 0.03).toFixed(6));
+      const payout = parseFloat((p.pot - fee).toFixed(6));
+      const wc = { _escrowPK: escrowPK };
+      const pc = {};
+      if (fee > 0.0001)   _escrowSendExact(escrowPK, USDC_ADDR, TREASURY_ADDR, fee).catch(()=>{});
+      if (payout > 0.001) _escrowSend(wc, pc, winner.addr, payout).catch(()=>{});
+    }
   }
 
   // End hand
@@ -4815,6 +4834,7 @@ function _handlePokerMessage(data, opts) {
         sbIdx: 1,
         bbIdx: 2,
         roomCode: data.roomCode,
+        escrowAddr: data.escrowAddr || null,  // shared pot wallet — players send here on call/raise
         isHost: false,
         myAddr: state.account?.address,
         structure: 'texas-holdem',
