@@ -3770,6 +3770,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
   }
 
+  document.getElementById('btn-pwa-refresh').onclick = () => {
+    const btn = document.getElementById('btn-pwa-refresh');
+    btn.style.opacity = '1';
+    btn.style.transition = 'transform 0.6s ease';
+    btn.style.transform = 'rotate(360deg)';
+    setTimeout(() => { window.location.reload(true); }, 400);
+  };
+
   document.getElementById('btn-history').onclick = () => {
     // Simple history toast — could expand to full screen
     if (!state.txHistory.length) { alert('No transactions yet.'); return; }
