@@ -141,7 +141,7 @@ h1 { font-size: 18px; font-weight: 700; }
   border-radius: 50%;
   background: transparent;
   border: none;
-  color: var(--text-2);
+  color: rgba(255,255,255,0.9);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
