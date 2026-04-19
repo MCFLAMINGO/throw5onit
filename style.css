@@ -4175,3 +4175,107 @@ body:has(.demo-banner:not(.hidden)) .screen {
   margin-top: -8px;
 }
 .orb-sponsor-nudge.visible { opacity: 1; }
+
+/* ─── Texas Hold'em Poker ─────────────────────────────────────────────── */
+.poker-street-badge {
+  display: inline-block;
+  padding: 4px 14px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  color: #fff;
+  background: #4a9eff;
+  text-transform: uppercase;
+  margin: 0 auto 6px;
+  box-shadow: 0 0 16px rgba(74,158,255,0.45);
+}
+.poker-street-badge.street-preflop  { background: #4a9eff; box-shadow: 0 0 16px rgba(74,158,255,0.55); }
+.poker-street-badge.street-flop     { background: #2ecc71; box-shadow: 0 0 16px rgba(46,204,113,0.55); }
+.poker-street-badge.street-turn     { background: #f39c12; box-shadow: 0 0 16px rgba(243,156,18,0.55); }
+.poker-street-badge.street-river    { background: #e74c3c; box-shadow: 0 0 16px rgba(231,76,60,0.55); }
+.poker-street-badge.street-showdown { background: #9b59b6; box-shadow: 0 0 16px rgba(155,89,182,0.55); }
+.poker-street-badge.street-settled  { background: #555; box-shadow: none; }
+
+.poker-action-panel {
+  margin: 14px auto 8px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  text-align: center;
+  width: min(92%, 420px);
+  transition: opacity 200ms, background 200ms;
+}
+.poker-turn-label {
+  font-size: 12px;
+  letter-spacing: 2px;
+  font-weight: 800;
+  color: #fff;
+  margin-bottom: 10px;
+  opacity: 0.9;
+}
+.poker-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.poker-action-btn {
+  flex: 1 1 0;
+  min-width: 80px;
+  padding: 10px 12px !important;
+  font-size: 13px !important;
+}
+.poker-waiting {
+  opacity: 0.45;
+  background: rgba(255,255,255,0.02);
+}
+.poker-your-turn-flash {
+  animation: pokerFlash 700ms ease-out;
+  background: rgba(255,255,255,0.12);
+}
+@keyframes pokerFlash {
+  0%   { background: rgba(255,255,255,0.85); box-shadow: 0 0 40px rgba(255,255,255,0.6); }
+  100% { background: rgba(255,255,255,0.04); box-shadow: none; }
+}
+
+.poker-seat-folded {
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+.poker-seat-active > div:first-child {
+  animation: pokerPulse 1.4s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(46,204,113,0.8);
+}
+@keyframes pokerPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(46,204,113,0.85); }
+  70%  { box-shadow: 0 0 0 14px rgba(46,204,113,0); }
+  100% { box-shadow: 0 0 0 0 rgba(46,204,113,0); }
+}
+.poker-seat-winner > div:first-child {
+  box-shadow: 0 0 0 3px #f1c40f, 0 0 24px rgba(241,196,15,0.7);
+}
+
+.dealer-badge, .sb-badge, .bb-badge {
+  position: absolute;
+  top: -6px; right: -6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  color: #000;
+  border: 1px solid rgba(0,0,0,0.35);
+}
+.dealer-badge { background: #f1c40f; }
+.sb-badge     { background: #e67e22; color: #fff; }
+.bb-badge     { background: #e74c3c; color: #fff; }
+
+.poker-host-controls {
+  margin: 12px auto 0;
+  width: min(92%, 420px);
+  text-align: center;
+}

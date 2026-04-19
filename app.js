@@ -275,6 +275,9 @@ const state = {
   roomPeers: [],        // [{addr, name, heading}]
   currentTarget: null,  // peer currently aimed at
   headingPollInterval: null,
+
+  // Poker state
+  poker: null,
 };
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -2294,11 +2297,21 @@ function openBetSetup() {
       state.bet.structure = c.dataset.struct;
       document.querySelectorAll('[data-struct]').forEach(x => x.classList.remove('active'));
       c.classList.add('active');
+      const startBtn = document.getElementById('btn-start-pot');
+      if (startBtn) startBtn.textContent = (c.dataset.struct === 'texas-holdem') ? 'Set Up Table' : 'Open the Pot';
     };
   });
+  // Reset button label on open
+  const startBtn = document.getElementById('btn-start-pot');
+  if (startBtn) startBtn.textContent = (state.bet.structure === 'texas-holdem') ? 'Set Up Table' : 'Open the Pot';
 }
 
 async function startPot() {
+  // Texas Hold'em branches off into its own setup flow
+  if (state.bet.structure === 'texas-holdem') {
+    openPokerSetup();
+    return;
+  }
   const desc = document.getElementById('bet-description').value.trim();
   if (!desc) { document.getElementById('bet-description').focus(); return; }
 
@@ -3797,6 +3810,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('bet-setup-back').onclick = () => showScreen('wallet');
   document.getElementById('btn-start-pot').onclick  = startPot;
 
+  // Poker wiring
+  const pokerBack = document.getElementById('poker-setup-back');
+  if (pokerBack) pokerBack.onclick = () => { try { leavePokerRoom(); } catch(_) {} showScreen('bet-setup'); };
+  const pokerStart = document.getElementById('btn-poker-start');
+  if (pokerStart) pokerStart.onclick = () => startPokerGame(state.poker?.seats || [], state.poker?.roomCode);
+  const pokerAdv = document.getElementById('btn-poker-advance');
+  if (pokerAdv) pokerAdv.onclick = onPokerAdvanceClick;
+  const pokerPayout = document.getElementById('btn-poker-payout');
+  if (pokerPayout) pokerPayout.onclick = onPokerPayoutClick;
+  const pokerJoinSelf = document.getElementById('poker-join-self');
+  if (pokerJoinSelf) pokerJoinSelf.onchange = () => renderPokerSetup();
+
   /* ── Pot screen ── */
   document.getElementById('btn-win').onclick  = () => settleBet(true);
   document.getElementById('btn-lose').onclick = () => settleBet(false);
@@ -4204,3 +4229,657 @@ function recordIncomingThrow(amount, from) {
   feed.prepend(entry);
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════════
+   22. TEXAS HOLD'EM POKER ENGINE
+   ═════════════════════════════════════════════════════════════════════ */
+
+const POKER_STARTING_STACK = 50;
+const POKER_SB = 1;
+const POKER_BB = 2;
+const POKER_MAX_SEATS = 6;
+
+let _pokerSelectedWinnerAddr = null;
+
+function pokerTopic(roomCode) {
+  return 'throw5/room/' + roomCode + '/poker';
+}
+
+function pokerHaptic() {
+  try { if (navigator.vibrate) navigator.vibrate([30,40,50,40,80,40,100,30,150,20,200]); } catch(_) {}
+}
+
+function isMyPokerTurn() {
+  const p = state.poker;
+  if (!p || !p.seats || !p.seats.length) return false;
+  const seat = p.seats[p.currentSeat];
+  if (!seat || !p.myAddr) return false;
+  return seat.addr.toLowerCase() === p.myAddr.toLowerCase();
+}
+
+function openPokerSetup() {
+  const myAddr = state.account?.address;
+  if (!myAddr) { alert('Wallet not ready'); return; }
+  // Derive a roomCode from a fresh random — reuse the same scheme as startPot
+  const code = Math.random().toString(16).slice(2, 8).toUpperCase();
+
+  state.poker = {
+    seats: [],
+    pot: 0,
+    street: 'preflop',
+    currentSeat: 0,
+    dealerIdx: 0,
+    sbIdx: 1,
+    bbIdx: 2,
+    roomCode: code,
+    isHost: true,
+    myAddr,
+    structure: 'texas-holdem',
+    demo: !!DEMO_MODE,
+    currentBet: POKER_BB,
+    lastRaiser: null,
+  };
+
+  showScreen('poker-setup');
+  renderPokerSetup();
+  // Host enters MQTT room so players can subscribe
+  enterRoom(code, {}).catch(() => {});
+  _subscribePokerTopic(code);
+}
+
+function renderPokerSetup() {
+  const p = state.poker;
+  if (!p) return;
+  const orbit = document.getElementById('poker-setup-orbit');
+  const crewRow = document.getElementById('poker-crew-row');
+  const startBtn = document.getElementById('btn-poker-start');
+  if (!orbit || !crewRow) return;
+
+  // Orbit: render seats (filled + empty) in a circle around orb
+  const totalSlots = POKER_MAX_SEATS;
+  const radius = 110;
+  orbit.innerHTML = '';
+  for (let i = 0; i < totalSlots; i++) {
+    const angle = (i / totalSlots) * 2 * Math.PI - Math.PI / 2;
+    const x = 50 + (radius / 2.2) * Math.cos(angle);
+    const y = 50 + (radius / 2.2) * Math.sin(angle);
+    const seat = p.seats[i];
+    const el = document.createElement('div');
+    el.className = 'poker-seat';
+    el.style.cssText = `position:absolute;left:${x}%;top:${y}%;transform:translate(-50%,-50%);width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;text-align:center;`;
+    if (seat) {
+      el.style.background = addrToColor(seat.addr);
+      el.style.color = '#fff';
+      el.innerHTML = seat.name.slice(0,2);
+      const role = i === 0 ? 'D' : i === 1 ? 'SB' : i === 2 ? 'BB' : '';
+      if (role) {
+        const badge = document.createElement('div');
+        badge.className = role === 'D' ? 'dealer-badge' : role === 'SB' ? 'sb-badge' : 'bb-badge';
+        badge.textContent = role;
+        el.appendChild(badge);
+      }
+      el.onclick = () => {
+        // Remove seat
+        p.seats.splice(i, 1);
+        renderPokerSetup();
+      };
+    } else {
+      el.style.border = '2px dashed rgba(255,255,255,0.35)';
+      el.style.color  = 'rgba(255,255,255,0.5)';
+      el.innerHTML = '+';
+    }
+    orbit.appendChild(el);
+  }
+
+  // Crew row (contacts + optional self)
+  const contacts = getContacts();
+  const joinSelf = document.getElementById('poker-join-self')?.checked;
+  const selfAddr = state.account?.address;
+  const selfName = 'YOU';
+  const assigned = new Set(p.seats.map(s => s.addr.toLowerCase()));
+  const avail = [];
+  if (joinSelf && selfAddr && !assigned.has(selfAddr.toLowerCase())) {
+    avail.push({ addr: selfAddr, name: selfName, isSelf: true });
+  }
+  for (const c of contacts) {
+    if (!assigned.has(c.addr.toLowerCase())) avail.push(c);
+  }
+  crewRow.innerHTML = avail.map(c => {
+    const color = addrToColor(c.addr);
+    const initials = (c.name || c.addr.slice(2,4)).slice(0,2).toUpperCase();
+    return `<button class="crew-avatar" data-addr="${c.addr}" data-name="${c.name || c.addr.slice(0,6)}" style="background:${color};width:48px;height:48px;border-radius:50%;border:none;color:#fff;font-weight:700">${initials}</button>`;
+  }).join('');
+  crewRow.querySelectorAll('.crew-avatar').forEach(btn => {
+    btn.onclick = () => {
+      if (p.seats.length >= POKER_MAX_SEATS) return;
+      p.seats.push({
+        addr: btn.dataset.addr,
+        name: btn.dataset.name,
+        role: 'player',
+        stack: POKER_STARTING_STACK,
+        bet: 0,
+        folded: false,
+      });
+      renderPokerSetup();
+    };
+  });
+
+  if (startBtn) startBtn.disabled = p.seats.length < 2;
+}
+
+function startPokerGame(seats, roomCode) {
+  const p = state.poker;
+  if (!p || !p.isHost) return;
+  if (!seats || seats.length < 2) return;
+
+  // Assign roles & post blinds
+  p.dealerIdx = 0;
+  p.sbIdx = seats.length >= 2 ? 1 : 0;
+  p.bbIdx = seats.length >= 3 ? 2 : (seats.length === 2 ? 0 : 1);
+
+  seats.forEach((s, i) => {
+    s.role = i === p.dealerIdx ? 'dealer' : i === p.sbIdx ? 'sb' : i === p.bbIdx ? 'bb' : 'player';
+    s.bet = 0;
+    s.folded = false;
+    s.stack = s.stack || POKER_STARTING_STACK;
+  });
+
+  // Post blinds
+  const sb = seats[p.sbIdx]; const bb = seats[p.bbIdx];
+  const sbAmt = Math.min(POKER_SB, sb.stack);
+  const bbAmt = Math.min(POKER_BB, bb.stack);
+  sb.stack -= sbAmt; sb.bet = sbAmt;
+  bb.stack -= bbAmt; bb.bet = bbAmt;
+  p.pot = sbAmt + bbAmt;
+  p.currentBet = bbAmt;
+  p.street = 'preflop';
+  // First action: UTG (seat after BB)
+  p.currentSeat = (p.bbIdx + 1) % seats.length;
+  p.lastRaiser = p.bbIdx;
+
+  // Debit blinds locally if host is SB or BB (demo only — live money would need sendStablecoin to escrow)
+  if (DEMO_MODE) {
+    const myLc = p.myAddr.toLowerCase();
+    if (sb.addr.toLowerCase() === myLc) { state.total = Math.max(0, state.total - sbAmt); state.pathUSD = state.total; }
+    if (bb.addr.toLowerCase() === myLc) { state.total = Math.max(0, state.total - bbAmt); state.pathUSD = state.total; }
+    try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
+    renderWalletUI();
+  }
+
+  _publishPoker({
+    event: 'poker_start',
+    seats: p.seats,
+    pot: p.pot,
+    street: p.street,
+    currentSeat: p.currentSeat,
+    roomCode: p.roomCode,
+    ts: Date.now(),
+  });
+
+  showScreen('poker-table');
+  renderPokerTable();
+  pokerNextTurn();
+}
+
+function pokerNextTurn() {
+  const p = state.poker;
+  if (!p || !p.isHost) return;
+  const seat = p.seats[p.currentSeat];
+  if (!seat) return;
+  _publishPoker({
+    event: 'poker_turn',
+    seatIdx: p.currentSeat,
+    addr: seat.addr,
+    currentBet: p.currentBet,
+    pot: p.pot,
+    ts: Date.now(),
+  });
+  renderPokerTable();
+}
+
+function pokerHandleAction(action, amount) {
+  const p = state.poker;
+  if (!p) return;
+  if (!isMyPokerTurn()) return;
+  const seat = p.seats[p.currentSeat];
+  const callAmt = Math.max(0, p.currentBet - seat.bet);
+  let add = 0;
+  let newStack = seat.stack;
+
+  if (action === 'fold') {
+    // no money moves
+  } else if (action === 'check') {
+    if (callAmt > 0) return; // can't check if bet to call
+  } else if (action === 'call') {
+    add = Math.min(callAmt, seat.stack);
+    newStack = seat.stack - add;
+  } else if (action === 'raise') {
+    const raiseTo = Math.max(p.currentBet + 1, amount || p.currentBet + 1);
+    const total = Math.min(raiseTo - seat.bet, seat.stack);
+    add = total;
+    newStack = seat.stack - add;
+  }
+
+  // Debit demo balance locally for chipping in
+  if (DEMO_MODE && add > 0) {
+    state.total = Math.max(0, state.total - add);
+    state.pathUSD = state.total;
+    try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
+    renderWalletUI();
+  }
+
+  _publishPoker({
+    event: 'poker_action',
+    addr: p.myAddr,
+    seatIdx: p.currentSeat,
+    action,
+    amount: add,
+    newStack,
+    ts: Date.now(),
+  });
+}
+
+function _applyAction(data) {
+  const p = state.poker;
+  if (!p) return;
+  const seat = p.seats[data.seatIdx];
+  if (!seat) return;
+  if (data.action === 'fold') {
+    seat.folded = true;
+  } else if (data.action === 'check') {
+    // no change
+  } else if (data.action === 'call') {
+    seat.bet += data.amount;
+    seat.stack = data.newStack;
+    p.pot += data.amount;
+  } else if (data.action === 'raise') {
+    seat.bet += data.amount;
+    seat.stack = data.newStack;
+    p.pot += data.amount;
+    if (seat.bet > p.currentBet) p.currentBet = seat.bet;
+    p.lastRaiser = data.seatIdx;
+  }
+
+  if (p.isHost) {
+    // Advance turn or close round
+    const active = p.seats.filter(s => !s.folded);
+    if (active.length <= 1) {
+      // Auto-settle to last remaining player
+      const winner = active[0];
+      if (winner) pokerSettle(winner.addr);
+      return;
+    }
+    // Find next non-folded seat
+    let next = (p.currentSeat + 1) % p.seats.length;
+    let safety = 0;
+    while (p.seats[next].folded && safety < p.seats.length) {
+      next = (next + 1) % p.seats.length;
+      safety++;
+    }
+    p.currentSeat = next;
+
+    // Betting round complete if all active have matched currentBet and we cycled back to raiser
+    const roundDone = active.every(s => s.bet === p.currentBet || s.stack === 0);
+    const cycledBack = (p.lastRaiser !== null) && (next === p.lastRaiser);
+    if (roundDone && cycledBack) {
+      // Wait for host to advance street
+      renderPokerTable();
+      return;
+    }
+    pokerNextTurn();
+  } else {
+    renderPokerTable();
+  }
+}
+
+function pokerAdvanceStreet(street) {
+  const p = state.poker;
+  if (!p || !p.isHost) return;
+  // Reset bets for new street
+  p.seats.forEach(s => { s.bet = 0; });
+  p.currentBet = 0;
+  p.street = street;
+  // First to act: seat after dealer that's not folded
+  if (street !== 'showdown') {
+    let next = (p.dealerIdx + 1) % p.seats.length;
+    let safety = 0;
+    while (p.seats[next].folded && safety < p.seats.length) {
+      next = (next + 1) % p.seats.length;
+      safety++;
+    }
+    p.currentSeat = next;
+    p.lastRaiser = next;
+  }
+  _publishPoker({
+    event: 'poker_street',
+    street,
+    pot: p.pot,
+    seats: p.seats,
+    ts: Date.now(),
+  });
+  renderPokerTable();
+  if (street !== 'showdown') pokerNextTurn();
+}
+
+function pokerSettle(winnerAddr) {
+  const p = state.poker;
+  if (!p || !p.isHost) return;
+  const winner = p.seats.find(s => s.addr.toLowerCase() === winnerAddr.toLowerCase());
+  if (!winner) return;
+
+  _publishPoker({
+    event: 'poker_settle',
+    winnerAddr: winner.addr,
+    winnerName: winner.name,
+    pot: p.pot,
+    ts: Date.now(),
+  });
+
+  // Pay winner: demo credits locally, live uses settleBet path pattern
+  if (DEMO_MODE) {
+    const myLc = p.myAddr.toLowerCase();
+    if (winner.addr.toLowerCase() === myLc) {
+      state.total = (state.total || 0) + p.pot;
+      state.pathUSD = state.total;
+      try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
+      renderWalletUI();
+    }
+    // Credit other device via MQTT demo topic
+    try {
+      const fakeHash = '0xPOKER' + Math.random().toString(16).slice(2,12).toUpperCase();
+      _demoCreditGlobal(winner.addr, p.pot, fakeHash);
+    } catch(_) {}
+  } else {
+    // Live: winner-all payout via sendStablecoin from escrow (if available) — reuse settleBet pattern
+    // For simplicity, leave on-chain payout as a follow-up if escrow is wired. Demo covers the flow.
+    try { sendStablecoin(winner.addr, p.pot); } catch(_) {}
+  }
+
+  // End hand
+  p.street = 'settled';
+  renderPokerTable();
+}
+
+function renderPokerTable() {
+  const p = state.poker;
+  if (!p) return;
+
+  const badge = document.getElementById('poker-street-badge');
+  if (badge) {
+    badge.textContent = (p.street || 'preflop').toUpperCase();
+    badge.className = 'poker-street-badge street-' + (p.street || 'preflop');
+  }
+
+  const potEl = document.getElementById('poker-pot-total');
+  if (potEl) potEl.textContent = '$' + (p.pot || 0);
+
+  // Stack line
+  const stackText = document.getElementById('poker-stack-text');
+  const mySeat = p.seats.find(s => s.addr.toLowerCase() === (p.myAddr || '').toLowerCase());
+  if (stackText) stackText.textContent = mySeat ? `YOUR STACK: $${(mySeat.stack || 0).toFixed(2)}` : 'SPECTATOR';
+
+  // Orbit: seat avatars around orb
+  const orbit = document.getElementById('poker-orbit');
+  if (orbit) {
+    orbit.innerHTML = '';
+    const n = p.seats.length;
+    const radius = 120;
+    p.seats.forEach((seat, i) => {
+      const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+      const x = 50 + (radius / 2.2) * Math.cos(angle);
+      const y = 50 + (radius / 2.2) * Math.sin(angle);
+      const el = document.createElement('div');
+      const isCurrent = i === p.currentSeat && p.street !== 'settled' && p.street !== 'showdown';
+      const isWinnerPick = _pokerSelectedWinnerAddr && _pokerSelectedWinnerAddr.toLowerCase() === seat.addr.toLowerCase();
+      el.className = 'poker-avatar' + (seat.folded ? ' poker-seat-folded' : '') + (isCurrent ? ' poker-seat-active' : '') + (isWinnerPick ? ' poker-seat-winner' : '');
+      el.style.cssText = `position:absolute;left:${x}%;top:${y}%;transform:translate(-50%,-50%);width:64px;min-height:64px;text-align:center;`;
+      const initials = (seat.name || seat.addr.slice(2,4)).slice(0,2).toUpperCase();
+      const color = addrToColor(seat.addr);
+      const role = i === p.dealerIdx ? 'D' : i === p.sbIdx ? 'SB' : i === p.bbIdx ? 'BB' : '';
+      el.innerHTML = `
+        <div style="width:48px;height:48px;border-radius:50%;margin:0 auto;background:${color};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;position:relative">
+          ${initials}
+          ${role ? `<div class="${role === 'D' ? 'dealer-badge' : role === 'SB' ? 'sb-badge' : 'bb-badge'}">${role}</div>` : ''}
+        </div>
+        <div style="font-size:10px;margin-top:2px;color:rgba(255,255,255,0.85)">${seat.name || ''}</div>
+        <div style="font-size:10px;color:#4a9eff">$${(seat.stack || 0).toFixed(0)}</div>
+        ${seat.bet > 0 ? `<div style="font-size:9px;color:#f39c12">bet $${seat.bet}</div>` : ''}
+      `;
+      if (p.isHost && p.street === 'showdown') {
+        el.style.cursor = 'pointer';
+        el.onclick = () => {
+          _pokerSelectedWinnerAddr = seat.addr;
+          const btn = document.getElementById('btn-poker-payout');
+          if (btn) btn.disabled = false;
+          renderPokerTable();
+        };
+      }
+      orbit.appendChild(el);
+    });
+  }
+
+  // Action panel
+  const actionArea = document.getElementById('poker-action-area');
+  const turnLabel  = document.getElementById('poker-turn-label');
+  const btnsWrap   = document.getElementById('poker-action-buttons');
+  if (actionArea && turnLabel && btnsWrap) {
+    const showdown = p.street === 'showdown' || p.street === 'settled';
+    if (showdown) {
+      actionArea.style.display = 'none';
+    } else {
+      actionArea.style.display = '';
+      const myTurn = isMyPokerTurn();
+      const seat = p.seats[p.currentSeat];
+      if (myTurn) {
+        actionArea.classList.remove('poker-waiting');
+        actionArea.classList.add('poker-your-turn-flash');
+        turnLabel.textContent = 'YOUR TURN';
+        const callAmt = Math.max(0, (p.currentBet || 0) - (mySeat?.bet || 0));
+        const canCheck = callAmt === 0;
+        btnsWrap.innerHTML = '';
+        if (canCheck) {
+          btnsWrap.appendChild(_mkActionBtn('CHECK', () => pokerHandleAction('check')));
+        } else {
+          btnsWrap.appendChild(_mkActionBtn(`CALL $${callAmt}`, () => pokerHandleAction('call')));
+        }
+        btnsWrap.appendChild(_mkActionBtn('RAISE', () => {
+          const min = (p.currentBet || 0) + 1;
+          const raw = prompt(`Raise to how much? (min $${min})`, String(min));
+          const amt = parseInt(raw, 10);
+          if (isNaN(amt) || amt < min) return;
+          pokerHandleAction('raise', amt);
+        }));
+        btnsWrap.appendChild(_mkActionBtn('FOLD', () => pokerHandleAction('fold')));
+        if (!actionArea._flashed) {
+          actionArea._flashed = true;
+          pokerHaptic();
+          setTimeout(() => { actionArea.classList.remove('poker-your-turn-flash'); actionArea._flashed = false; }, 800);
+        }
+      } else {
+        actionArea.classList.add('poker-waiting');
+        actionArea.classList.remove('poker-your-turn-flash');
+        turnLabel.textContent = `Waiting for ${seat?.name || '…'}`;
+        btnsWrap.innerHTML = '';
+      }
+    }
+  }
+
+  // Host-only street advance controls
+  const hostCtl = document.getElementById('poker-host-controls');
+  const showdownCtl = document.getElementById('poker-showdown-controls');
+  if (hostCtl && showdownCtl) {
+    if (!p.isHost || p.street === 'settled') {
+      hostCtl.style.display = 'none';
+      showdownCtl.style.display = 'none';
+    } else if (p.street === 'showdown') {
+      hostCtl.style.display = 'none';
+      showdownCtl.style.display = '';
+    } else {
+      const active = p.seats.filter(s => !s.folded);
+      const roundDone = active.every(s => s.bet === p.currentBet || s.stack === 0);
+      // Round complete only when cycled back to last raiser OR no raiser (all checks around)
+      const noRaiseRound = active.every(s => s.bet === 0 || s.stack === 0);
+      const cycledBack = p.lastRaiser !== null && p.currentSeat === p.lastRaiser;
+      const canAdvance = roundDone && (cycledBack || noRaiseRound);
+      hostCtl.style.display = '';
+      showdownCtl.style.display = 'none';
+      const advBtn = document.getElementById('btn-poker-advance');
+      if (advBtn) {
+        const nextStreet = p.street === 'preflop' ? 'flop' : p.street === 'flop' ? 'turn' : p.street === 'turn' ? 'river' : 'showdown';
+        const label = nextStreet === 'flop' ? 'Deal Flop' : nextStreet === 'turn' ? 'Deal Turn' : nextStreet === 'river' ? 'Deal River' : 'Go to Showdown';
+        advBtn.textContent = label;
+        advBtn.disabled = !canAdvance;
+        advBtn.dataset.next = nextStreet;
+      }
+    }
+  }
+}
+
+function _mkActionBtn(label, onclick) {
+  const b = document.createElement('button');
+  b.className = 'btn-primary poker-action-btn';
+  b.textContent = label;
+  b.onclick = onclick;
+  return b;
+}
+
+function onPokerAdvanceClick() {
+  const advBtn = document.getElementById('btn-poker-advance');
+  if (!advBtn) return;
+  const next = advBtn.dataset.next || 'flop';
+  pokerAdvanceStreet(next);
+}
+
+function onPokerPayoutClick() {
+  if (!_pokerSelectedWinnerAddr) return;
+  pokerSettle(_pokerSelectedWinnerAddr);
+  _pokerSelectedWinnerAddr = null;
+}
+
+/* ── Poker MQTT ── */
+let _pokerMqttClient = null;
+
+function _subscribePokerTopic(roomCode) {
+  try {
+    try { _pokerMqttClient?.end(true); } catch(_) {}
+    const clientId = 'poker_' + Math.random().toString(36).slice(2, 9);
+    const c = mqtt.connect(MQTT_BROKER, { clientId, clean: true, connectTimeout: 8000, reconnectPeriod: 3000 });
+    _pokerMqttClient = c;
+    const topic = pokerTopic(roomCode);
+    c.on('connect', () => {
+      c.subscribe(topic, { qos: 1 });
+    });
+    c.on('message', (t, payload) => {
+      if (t !== topic) return;
+      let data;
+      try { data = JSON.parse(payload.toString()); } catch { return; }
+      _handlePokerMessage(data);
+    });
+  } catch (e) { console.warn('poker mqtt subscribe failed', e); }
+}
+
+function _publishPoker(msg) {
+  const p = state.poker;
+  if (!p || !p.roomCode) return;
+  const topic = pokerTopic(p.roomCode);
+  const payload = JSON.stringify(msg);
+  try {
+    if (_pokerMqttClient && _pokerMqttClient.connected) {
+      _pokerMqttClient.publish(topic, payload, { qos: 1 });
+    } else {
+      const clientId = 'pokerpub_' + Math.random().toString(36).slice(2, 9);
+      const c = mqtt.connect(MQTT_BROKER, { clientId, clean: true, connectTimeout: 6000, reconnectPeriod: 0 });
+      c.on('connect', () => {
+        c.publish(topic, payload, { qos: 1 }, () => { try { c.end(true); } catch(_) {} });
+      });
+    }
+  } catch(_) {}
+  // Also apply locally for host immediately (so host UI updates without round-trip)
+  _handlePokerMessage(msg, { local: true });
+}
+
+function _handlePokerMessage(data, opts) {
+  opts = opts || {};
+  const p = state.poker;
+  if (!data || !data.event) return;
+
+  if (data.event === 'poker_start') {
+    // Non-host player joining mid-stream: initialize state
+    if (!state.poker || !state.poker.isHost) {
+      state.poker = {
+        seats: data.seats || [],
+        pot: data.pot || 0,
+        street: data.street || 'preflop',
+        currentSeat: data.currentSeat || 0,
+        dealerIdx: 0,
+        sbIdx: 1,
+        bbIdx: 2,
+        roomCode: data.roomCode,
+        isHost: false,
+        myAddr: state.account?.address,
+        structure: 'texas-holdem',
+        demo: !!DEMO_MODE,
+        currentBet: POKER_BB,
+        lastRaiser: null,
+      };
+      showScreen('poker-table');
+    }
+    renderPokerTable();
+    return;
+  }
+  if (!p) return;
+
+  if (data.event === 'poker_turn') {
+    p.currentSeat = data.seatIdx;
+    p.currentBet = data.currentBet;
+    p.pot = data.pot;
+    renderPokerTable();
+    // Haptic if this is me
+    if (data.addr && p.myAddr && data.addr.toLowerCase() === p.myAddr.toLowerCase()) {
+      pokerHaptic();
+      const actionArea = document.getElementById('poker-action-area');
+      if (actionArea) {
+        actionArea.classList.add('poker-your-turn-flash');
+        setTimeout(() => actionArea.classList.remove('poker-your-turn-flash'), 800);
+      }
+    }
+    return;
+  }
+
+  if (data.event === 'poker_action') {
+    // Apply to state (both host and non-host process it; host drives turn advance)
+    if (!opts.local || p.isHost) {
+      _applyAction(data);
+    }
+    return;
+  }
+
+  if (data.event === 'poker_street') {
+    p.street = data.street;
+    p.pot = data.pot;
+    if (data.seats) p.seats = data.seats;
+    renderPokerTable();
+    return;
+  }
+
+  if (data.event === 'poker_settle') {
+    p.street = 'settled';
+    // Credit receiver if demo and it's me
+    if (DEMO_MODE && data.winnerAddr && p.myAddr && data.winnerAddr.toLowerCase() === p.myAddr.toLowerCase() && !p.isHost) {
+      state.total = (state.total || 0) + (data.pot || 0);
+      state.pathUSD = state.total;
+      try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
+      renderWalletUI();
+    }
+    showTxFlash('🏆', '$' + (data.pot || 0), (data.winnerName || 'Winner') + ' wins!');
+    renderPokerTable();
+    return;
+  }
+}
+
+function leavePokerRoom() {
+  try { _pokerMqttClient?.end(true); } catch(_) {}
+  _pokerMqttClient = null;
+  state.poker = null;
+  _pokerSelectedWinnerAddr = null;
+}

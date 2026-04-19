@@ -561,9 +561,70 @@
         <div class="struct-name">ROUND ROBIN</div>
         <div class="struct-desc">Pick sides &nbsp;|&nbsp; Losers pay winners proportionally</div>
       </button>
+      <button class="structure-card" data-struct="texas-holdem">
+        <div class="struct-name">TEXAS HOLD'EM</div>
+        <div class="struct-desc">Real cards &middot; phone bets &middot; $1/$2 blinds &middot; $50 stack</div>
+      </button>
     </div>
 
     <button class="btn-primary" id="btn-start-pot">Open the Pot</button>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: POKER TABLE SETUP (HOST) ═════════════════════════════════════ -->
+<div id="screen-poker-setup" class="screen">
+  <button class="back-btn" id="poker-setup-back">← Back</button>
+  <div class="bet-setup-ui">
+    <div class="screen-label">TEXAS HOLD'EM</div>
+    <div class="fee-notice" style="margin-top:-4px">Tap crew in seat order — clockwise from dealer</div>
+
+    <div class="pot-arena" style="height:300px;margin:16px 0">
+      <div class="pot-orb" id="poker-setup-orb">
+        <div class="pot-orb-amount" style="font-size:24px">$1/$2</div>
+        <div class="pot-orb-sub">BLINDS</div>
+      </div>
+      <div class="pot-orbit" id="poker-setup-orbit"></div>
+    </div>
+
+    <div class="field-label" style="margin-top:8px">YOUR CREW</div>
+    <div id="poker-crew-row" style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;padding:8px 0;min-height:60px"></div>
+
+    <label style="display:flex;align-items:center;gap:8px;justify-content:center;margin:10px 0;font-size:13px;opacity:0.85">
+      <input type="checkbox" id="poker-join-self" checked />
+      Join as player
+    </label>
+
+    <button class="btn-primary" id="btn-poker-start" disabled>Start Game</button>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: POKER TABLE (ALL PLAYERS) ═══════════════════════════════════ -->
+<div id="screen-poker-table" class="screen">
+  <div class="pot-ui">
+    <div class="poker-street-badge" id="poker-street-badge">PREFLOP</div>
+    <div class="pot-bet-text" id="poker-stack-text" style="font-size:14px;opacity:0.85">YOUR STACK: $50.00</div>
+
+    <div class="pot-arena" style="margin-top:8px">
+      <div class="pot-orb" id="poker-pot-orb">
+        <div class="pot-orb-amount" id="poker-pot-total">$0</div>
+        <div class="pot-orb-sub">POT</div>
+      </div>
+      <div class="pot-orbit" id="poker-orbit"></div>
+    </div>
+
+    <div id="poker-action-area" class="poker-action-panel">
+      <div id="poker-turn-label" class="poker-turn-label">Waiting…</div>
+      <div id="poker-action-buttons" class="poker-action-buttons"></div>
+    </div>
+
+    <div id="poker-host-controls" class="poker-host-controls" style="display:none">
+      <button class="btn-primary" id="btn-poker-advance">Deal Flop</button>
+    </div>
+
+    <div id="poker-showdown-controls" class="poker-host-controls" style="display:none">
+      <div class="fee-notice">Tap the winner's avatar, then pay out</div>
+      <button class="btn-primary" id="btn-poker-payout" disabled>Pay Out</button>
+    </div>
   </div>
 </div>
 
