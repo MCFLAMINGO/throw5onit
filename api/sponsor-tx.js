@@ -27,9 +27,10 @@ export default async function handler(req, res) {
   if (!executorPKRaw) return res.status(500).json({ error: 'executor not configured' });
   const executorPK = ('0x' + executorPKRaw.replace(/\s/g, '').replace(/^0x/, '')).toLowerCase();
 
-  const { fromPK, to, tokenAddr, amount } = req.body || {};
-  if (!fromPK || !to || !tokenAddr || amount == null) {
-    return res.status(400).json({ error: 'missing fromPK, to, tokenAddr, or amount' });
+  const { fromPK, to, amount } = req.body || {};
+  let { tokenAddr } = req.body || {};
+  if (!fromPK || !to || amount == null) {
+    return res.status(400).json({ error: 'missing fromPK, to, or amount' });
   }
 
   const amtNum = Number(amount);
@@ -38,9 +39,16 @@ export default async function handler(req, res) {
   // Normalize
   const escrowPK = ('0x' + fromPK.replace(/\s/g, '').replace(/^0x/, '')).toLowerCase();
   const toAddr   = to.toLowerCase().startsWith('0x') ? to : '0x' + to;
-  const tokenLc  = tokenAddr.toLowerCase();
-  if (tokenLc !== USDC_ADDR && tokenLc !== PATHUSD_ADDR) {
-    return res.status(400).json({ error: 'tokenAddr must be USDC or pathUSD' });
+
+  // tokenAddr='auto' (or omitted): pick whichever token the sender holds —
+  // USDC first, pathUSD fallback — mirrors _escrowSend in app.js
+  const AUTO = !tokenAddr || tokenAddr === 'auto';
+  if (!AUTO) {
+    const tokenLc = tokenAddr.toLowerCase();
+    if (tokenLc !== USDC_ADDR && tokenLc !== PATHUSD_ADDR) {
+      return res.status(400).json({ error: 'tokenAddr must be USDC, pathUSD, or auto' });
+    }
+    tokenAddr = tokenLc;
   }
 
   let createClient, http, parseAbi, privateKeyToAccount, tempoMainnet, Actions;
@@ -66,41 +74,70 @@ export default async function handler(req, res) {
       account: escrowAcc,
     });
 
-    // Cap at sendable given Tempo's per-tx protocol fee charged on top of transfer amount
     const TIP20_ABI = parseAbi([
       'function transfer(address to, uint256 amount) returns (bool)',
       'function balanceOf(address owner) view returns (uint256)',
     ]);
-
-    // Read current balance to clamp
     const { readContract } = await import('viem/actions');
-    const rawBal = await readContract(client, {
-      address: tokenLc,
-      abi: TIP20_ABI,
-      functionName: 'balanceOf',
-      args: [escrowAcc.address],
-    });
 
-    let amountRaw = BigInt(Math.round(amtNum * 1e6));
-    const maxSend = BigInt(Math.floor(Number(rawBal) / (1 + TEMPO_FEE_RATE)));
-    if (amountRaw > maxSend) amountRaw = maxSend;
-    if (amountRaw <= 0n) return res.status(400).json({ error: 'escrow balance insufficient for requested amount' });
+    // Helper: read one token balance
+    async function readBal(tkn) {
+      const raw = await readContract(client, { address: tkn, abi: TIP20_ABI, functionName: 'balanceOf', args: [escrowAcc.address] });
+      return Number(raw);
+    }
 
-    // Execute Tempo transferSync with EXECUTOR as feePayer
-    const result = await Actions.token.transferSync(client, {
-      token: tokenLc,
-      to: toAddr,
-      amount: amountRaw,
-      feePayer: executorAcc,
-      feeToken: PATHUSD_ADDR,
-    });
+    // Helper: execute one leg
+    async function doTransfer(tkn, amtRaw) {
+      if (amtRaw <= 0n) return null;
+      const result = await Actions.token.transferSync(client, {
+        token: tkn,
+        to: toAddr,
+        amount: amtRaw,
+        feePayer: executorAcc,
+        feeToken: PATHUSD_ADDR,
+      });
+      return result?.receipt?.transactionHash || result?.receipt?.hash || null;
+    }
 
-    const hash = result?.receipt?.transactionHash || result?.receipt?.hash || null;
-    const block = result?.receipt?.blockNumber != null
-      ? String(result.receipt.blockNumber)
-      : null;
+    // Determine which token(s) to use
+    let hashes = [];
+    let remaining = amtNum;
 
-    return res.status(200).json({ ok: true, hash, blockNumber: block });
+    if (AUTO) {
+      // USDC first, pathUSD fallback — mirrors _escrowSend in app.js
+      const [usdcRaw, pathRaw] = await Promise.all([readBal(USDC_ADDR), readBal(PATHUSD_ADDR)]);
+      const usdcSendable = usdcRaw / 1e6 / (1 + TEMPO_FEE_RATE);
+      const pathSendable = pathRaw / 1e6 / (1 + TEMPO_FEE_RATE);
+
+      if (usdcSendable >= 0.0001 && remaining > 0) {
+        const take    = Math.min(usdcSendable, remaining);
+        const takeRaw = BigInt(Math.floor(take * 1e6));
+        const h = await doTransfer(USDC_ADDR, takeRaw);
+        if (h) { hashes.push(h); remaining -= take; }
+      }
+      if (remaining >= 0.0001 && pathSendable >= 0.0001) {
+        const take    = Math.min(pathSendable, remaining);
+        const takeRaw = BigInt(Math.floor(take * 1e6));
+        const h = await doTransfer(PATHUSD_ADDR, takeRaw);
+        if (h) { hashes.push(h); remaining -= take; }
+      }
+      if (hashes.length === 0) {
+        return res.status(400).json({ error: 'insufficient balance in both USDC and pathUSD' });
+      }
+    } else {
+      // Explicit token — clamp to available balance
+      const rawBal  = await readBal(tokenAddr);
+      const sendable = rawBal / 1e6 / (1 + TEMPO_FEE_RATE);
+      const take    = Math.min(sendable, amtNum);
+      const takeRaw = BigInt(Math.floor(take * 1e6));
+      if (takeRaw <= 0n) return res.status(400).json({ error: 'escrow balance insufficient for requested amount' });
+      const h = await doTransfer(tokenAddr, takeRaw);
+      if (h) hashes.push(h);
+    }
+
+    const hash  = hashes[0] || null;
+    const block = null; // block not critical for response
+    return res.status(200).json({ ok: true, hash, hashes, blockNumber: block });
   } catch (e) {
     console.error('[sponsor-tx] failed:', e);
     return res.status(500).json({ error: (e && (e.shortMessage || e.message)) || 'unknown' });
