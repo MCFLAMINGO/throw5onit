@@ -615,11 +615,23 @@
 
     <div id="poker-action-area" class="poker-action-panel">
       <div id="poker-turn-label" class="poker-turn-label">Waiting…</div>
-      <div id="poker-action-buttons" class="poker-action-buttons"></div>
-    </div>
 
-    <div id="poker-host-controls" class="poker-host-controls" style="display:none">
-      <button class="btn-primary" id="btn-poker-advance">Deal Flop</button>
+      <!-- Raise scroller — hidden when it's not your turn -->
+      <div id="poker-raise-row" style="display:none;flex-direction:row;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:4px 2px 6px;width:100%;">
+        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="1">$1</button>
+        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="5">$5</button>
+        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="10">$10</button>
+        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="15">$15</button>
+        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="20">$20</button>
+        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="25">$25</button>
+        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="30">$30</button>
+        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="35">$35</button>
+        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="40">$40</button>
+        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="45">$45</button>
+        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="50">$50</button>
+      </div>
+
+      <div id="poker-action-buttons" class="poker-action-buttons"></div>
     </div>
 
     <div id="poker-showdown-controls" class="poker-host-controls" style="display:none">

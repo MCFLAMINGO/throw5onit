@@ -4381,6 +4381,7 @@ function startPokerGame(seats, roomCode) {
     s.role = i === p.dealerIdx ? 'dealer' : i === p.sbIdx ? 'sb' : i === p.bbIdx ? 'bb' : 'player';
     s.bet = 0;
     s.folded = false;
+    s.acted = false;
     s.stack = s.stack || POKER_STARTING_STACK;
   });
 
@@ -4454,18 +4455,20 @@ function pokerHandleAction(action, amount) {
   if (action === 'fold') {
     // no money moves
   } else if (action === 'check') {
-    if (callAmt > 0) return; // can't check if bet to call
+    if (callAmt > 0) return; // can't check if there's a bet to call
   } else if (action === 'call') {
     add = Math.min(callAmt, seat.stack);
     newStack = seat.stack - add;
   } else if (action === 'raise') {
+    // amount = the total raise-to value (e.g. raise TO $10, not raise BY $10)
     const raiseTo = Math.max(p.currentBet + 1, amount || p.currentBet + 1);
     const total = Math.min(raiseTo - seat.bet, seat.stack);
+    if (total <= 0) return;
     add = total;
     newStack = seat.stack - add;
   }
 
-  // Money moves: demo debits locally, live sends to shared escrow (the pot)
+  // Money moves: demo debits locally, live sends real money to shared escrow
   if (add > 0) {
     if (DEMO_MODE) {
       state.total = Math.max(0, state.total - add);
@@ -4473,9 +4476,12 @@ function pokerHandleAction(action, amount) {
       try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
       renderWalletUI();
     } else {
-      // Live: call/raise sends exact amount into the shared escrow wallet
-      const escrow = p.escrowAddr || state.bet.escrowAddr;
-      if (escrow) sendStablecoin(escrow, add).catch(()=>{});
+      const escrow = p.escrowAddr || state.bet?.escrowAddr;
+      if (!escrow) {
+        alert('Pot wallet not set up — cannot send live funds. Return to lobby.');
+        return;
+      }
+      sendStablecoin(escrow, add).catch(e => console.error('poker escrow send failed', e));
     }
   }
 
@@ -4495,10 +4501,11 @@ function _applyAction(data) {
   if (!p) return;
   const seat = p.seats[data.seatIdx];
   if (!seat) return;
+  seat.acted = true; // mark this seat as having acted this round
   if (data.action === 'fold') {
     seat.folded = true;
   } else if (data.action === 'check') {
-    // no change
+    // no money move
   } else if (data.action === 'call') {
     seat.bet += data.amount;
     seat.stack = data.newStack;
@@ -4508,18 +4515,23 @@ function _applyAction(data) {
     seat.stack = data.newStack;
     p.pot += data.amount;
     if (seat.bet > p.currentBet) p.currentBet = seat.bet;
+    // The raiser becomes the new lastRaiser — round ends when action returns to them
     p.lastRaiser = data.seatIdx;
+    // Allow all OTHER active players to act again (re-raise is now open to them)
+    p.seats.forEach((s, i) => {
+      if (i !== data.seatIdx && !s.folded) s.acted = false;
+    });
   }
 
   if (p.isHost) {
     // Advance turn or close round
     const active = p.seats.filter(s => !s.folded);
     if (active.length <= 1) {
-      // Auto-settle to last remaining player
       const winner = active[0];
       if (winner) pokerSettle(winner.addr);
       return;
     }
+
     // Find next non-folded seat
     let next = (p.currentSeat + 1) % p.seats.length;
     let safety = 0;
@@ -4529,12 +4541,19 @@ function _applyAction(data) {
     }
     p.currentSeat = next;
 
-    // Betting round complete if all active have matched currentBet and we cycled back to raiser
+    // Round done: everyone active has matched currentBet (or is all-in)
+    // AND we've returned to the player who last raised (or all checked)
     const roundDone = active.every(s => s.bet === p.currentBet || s.stack === 0);
-    const cycledBack = (p.lastRaiser !== null) && (next === p.lastRaiser);
-    if (roundDone && cycledBack) {
-      // Wait for host to advance street
-      renderPokerTable();
+    const cycledToRaiser = p.lastRaiser !== null && next === p.lastRaiser;
+    const allChecked = p.currentBet === 0 && active.every(s => s.acted);
+
+    if (roundDone && (cycledToRaiser || allChecked)) {
+      // Auto-advance street
+      const nextStreet = p.street === 'preflop' ? 'flop'
+        : p.street === 'flop' ? 'turn'
+        : p.street === 'turn' ? 'river'
+        : 'showdown';
+      pokerAdvanceStreet(nextStreet);
       return;
     }
     pokerNextTurn();
@@ -4546,12 +4565,14 @@ function _applyAction(data) {
 function pokerAdvanceStreet(street) {
   const p = state.poker;
   if (!p || !p.isHost) return;
-  // Reset bets for new street
-  p.seats.forEach(s => { s.bet = 0; });
+  // Reset bets + acted flags for new street
+  p.seats.forEach(s => { s.bet = 0; s.acted = false; });
   p.currentBet = 0;
   p.street = street;
-  // First to act: seat after dealer that's not folded
-  if (street !== 'showdown') {
+  if (street === 'showdown') {
+    p.lastRaiser = null;
+  } else {
+    // First to act after dealer
     let next = (p.dealerIdx + 1) % p.seats.length;
     let safety = 0;
     while (p.seats[next].folded && safety < p.seats.length) {
@@ -4559,7 +4580,8 @@ function pokerAdvanceStreet(street) {
       safety++;
     }
     p.currentSeat = next;
-    p.lastRaiser = next;
+    // lastRaiser = null means no one has raised yet this street
+    p.lastRaiser = null;
   }
   _publishPoker({
     event: 'poker_street',
@@ -4681,34 +4703,62 @@ function renderPokerTable() {
   const actionArea = document.getElementById('poker-action-area');
   const turnLabel  = document.getElementById('poker-turn-label');
   const btnsWrap   = document.getElementById('poker-action-buttons');
+  const raiseRow   = document.getElementById('poker-raise-row');
   if (actionArea && turnLabel && btnsWrap) {
     const showdown = p.street === 'showdown' || p.street === 'settled';
     if (showdown) {
       actionArea.style.display = 'none';
+      if (raiseRow) raiseRow.style.display = 'none';
     } else {
       actionArea.style.display = '';
-      const myTurn = isMyPokerTurn();
-      const seat = p.seats[p.currentSeat];
+      const myTurn  = isMyPokerTurn();
+      const curSeat = p.seats[p.currentSeat];
       if (myTurn) {
         actionArea.classList.remove('poker-waiting');
         actionArea.classList.add('poker-your-turn-flash');
         turnLabel.textContent = 'YOUR TURN';
-        const callAmt = Math.max(0, (p.currentBet || 0) - (mySeat?.bet || 0));
+        const callAmt  = Math.max(0, (p.currentBet || 0) - (mySeat?.bet || 0));
         const canCheck = callAmt === 0;
-        btnsWrap.innerHTML = '';
-        if (canCheck) {
-          btnsWrap.appendChild(_mkActionBtn('CHECK', () => pokerHandleAction('check')));
-        } else {
-          btnsWrap.appendChild(_mkActionBtn(`CALL $${callAmt}`, () => pokerHandleAction('call')));
+
+        // Raise scroller
+        if (raiseRow) {
+          raiseRow.style.display = 'flex';
+          const myStack    = mySeat?.stack || 0;
+          const minRaiseTo = (p.currentBet || 0) + 1;
+          raiseRow.querySelectorAll('.poker-raise-chip').forEach(chip => {
+            const amt     = parseInt(chip.dataset.raiseamt, 10);
+            const visible = amt >= minRaiseTo && amt <= myStack + (mySeat?.bet || 0);
+            chip.style.display = visible ? '' : 'none';
+            chip.classList.remove('active');
+            chip.onclick = () => {
+              raiseRow.querySelectorAll('.poker-raise-chip').forEach(c => c.classList.remove('active'));
+              chip.classList.add('active');
+              p._selectedRaise = amt;
+            };
+          });
         }
-        btnsWrap.appendChild(_mkActionBtn('RAISE', () => {
-          const min = (p.currentBet || 0) + 1;
-          const raw = prompt(`Raise to how much? (min $${min})`, String(min));
-          const amt = parseInt(raw, 10);
-          if (isNaN(amt) || amt < min) return;
-          pokerHandleAction('raise', amt);
-        }));
+
+        btnsWrap.innerHTML = '';
+
+        // THROW button = call/check (primary)
+        const throwLabel = canCheck ? 'CHECK' : `THROW $${callAmt}`;
+        const throwBtn = _mkActionBtn(throwLabel, () => {
+          if (canCheck) pokerHandleAction('check');
+          else pokerHandleAction('call');
+        });
+        throwBtn.style.cssText += ';background:var(--accent,#f39c12);font-size:18px;font-weight:800;padding:14px 0;width:100%;';
+        btnsWrap.appendChild(throwBtn);
+
+        // RAISE button — uses selected chip or min raise
+        const raiseBtn = _mkActionBtn('RAISE', () => {
+          const raiseTo = p._selectedRaise || ((p.currentBet || 0) + 1);
+          pokerHandleAction('raise', raiseTo);
+        });
+        btnsWrap.appendChild(raiseBtn);
+
+        // FOLD
         btnsWrap.appendChild(_mkActionBtn('FOLD', () => pokerHandleAction('fold')));
+
         if (!actionArea._flashed) {
           actionArea._flashed = true;
           pokerHaptic();
@@ -4717,40 +4767,18 @@ function renderPokerTable() {
       } else {
         actionArea.classList.add('poker-waiting');
         actionArea.classList.remove('poker-your-turn-flash');
-        turnLabel.textContent = `Waiting for ${seat?.name || '…'}`;
+        turnLabel.textContent = `Waiting for ${curSeat?.name || '\u2026'}`;
         btnsWrap.innerHTML = '';
+        if (raiseRow) raiseRow.style.display = 'none';
       }
     }
   }
 
-  // Host-only street advance controls
-  const hostCtl = document.getElementById('poker-host-controls');
+  // Showdown controls (payout) — always host-only
   const showdownCtl = document.getElementById('poker-showdown-controls');
-  if (hostCtl && showdownCtl) {
-    if (!p.isHost || p.street === 'settled') {
-      hostCtl.style.display = 'none';
-      showdownCtl.style.display = 'none';
-    } else if (p.street === 'showdown') {
-      hostCtl.style.display = 'none';
-      showdownCtl.style.display = '';
-    } else {
-      const active = p.seats.filter(s => !s.folded);
-      const roundDone = active.every(s => s.bet === p.currentBet || s.stack === 0);
-      // Round complete only when cycled back to last raiser OR no raiser (all checks around)
-      const noRaiseRound = active.every(s => s.bet === 0 || s.stack === 0);
-      const cycledBack = p.lastRaiser !== null && p.currentSeat === p.lastRaiser;
-      const canAdvance = roundDone && (cycledBack || noRaiseRound);
-      hostCtl.style.display = '';
-      showdownCtl.style.display = 'none';
-      const advBtn = document.getElementById('btn-poker-advance');
-      if (advBtn) {
-        const nextStreet = p.street === 'preflop' ? 'flop' : p.street === 'flop' ? 'turn' : p.street === 'turn' ? 'river' : 'showdown';
-        const label = nextStreet === 'flop' ? 'Deal Flop' : nextStreet === 'turn' ? 'Deal Turn' : nextStreet === 'river' ? 'Deal River' : 'Go to Showdown';
-        advBtn.textContent = label;
-        advBtn.disabled = !canAdvance;
-        advBtn.dataset.next = nextStreet;
-      }
-    }
+  if (showdownCtl) {
+    const isShowdown = p.street === 'showdown' && p.isHost;
+    showdownCtl.style.display = isShowdown ? '' : 'none';
   }
 }
 
