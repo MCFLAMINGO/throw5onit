@@ -2101,6 +2101,9 @@ function onCatchHit(amount, fromName, throwId, channel) {
   catchState.fired = true;
   if (throwId) catchState.seenIds.add(throwId);
 
+  // Haptic feedback — short tap then strong pulse on catch
+  try { if (navigator.vibrate) navigator.vibrate([40, 60, 120]); } catch(_) {}
+
   stopCatchWindow();
 
   const orb    = document.getElementById('catch-orb');
