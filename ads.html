@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>THROW — Ad Dashboard</title>
+  <meta name="coinzilla" content="83ee5bbfa0f3687d9c1df6d7e6209b51" />
+  <link rel="icon" href="icon-192.png" />
+  <style>
+    :root {
+      --bg:       #0A0A0F;
+      --surface:  #111118;
+      --surface2: #1A1A24;
+      --border:   #2A2A38;
+      --accent:   #7C3AED;
+      --accent2:  #A78BFA;
+      --green:    #22C55E;
+      --red:      #EF4444;
+      --yellow:   #F59E0B;
+      --text:     #F1F5F9;
+      --text2:    #94A3B8;
+      --text3:    #4B5563;
+      --radius:   10px;
+      --font:     'Inter', system-ui, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-font-smoothing: antialiased; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* NAV */
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      height: 56px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-logo {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .nav-logo span { color: var(--accent2); }
+    .nav-badge {
+      font-size: 11px;
+      background: var(--accent);
+      color: white;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+
+    /* LAYOUT */
+    .page { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+    /* STATS ROW */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+    }
+    .stat-label { font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+    .stat-value { font-size: 24px; font-weight: 700; color: var(--text); }
+    .stat-sub   { font-size: 11px; color: var(--text3); margin-top: 4px; }
+
+    /* SECTION HEADER */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .section-title { font-size: 15px; font-weight: 600; }
+
+    /* BUTTON */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity .15s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-ghost   { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-danger  { background: #7F1D1D; color: #FCA5A5; border: 1px solid #991B1B; }
+    .btn-sm      { padding: 5px 10px; font-size: 12px; }
+
+    /* CAMPAIGNS TABLE */
+    .campaigns-table {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th {
+      text-align: left;
+      padding: 12px 16px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text2);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+    }
+    tbody tr { border-bottom: 1px solid var(--border); }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(255,255,255,.02); }
+    tbody td { padding: 14px 16px; vertical-align: middle; }
+
+    .advertiser-cell { display: flex; align-items: center; gap: 10px; }
+    .ad-thumb {
+      width: 36px; height: 36px; border-radius: 6px;
+      object-fit: cover; background: var(--surface2); border: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .ad-thumb-placeholder {
+      width: 36px; height: 36px; border-radius: 6px;
+      background: var(--surface2); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; flex-shrink: 0;
+    }
+    .ad-name    { font-weight: 600; color: var(--text); }
+    .ad-copy    { font-size: 11px; color: var(--text2); margin-top: 2px; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .status-badge {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .status-active   { background: #14532D; color: #86EFAC; }
+    .status-paused   { background: #451A03; color: #FCD34D; }
+    .status-ended    { background: #1F2937; color: #6B7280; }
+
+    .actions-cell { display: flex; gap: 6px; }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text2);
+    }
+    .empty-state .icon { font-size: 36px; margin-bottom: 12px; }
+    .empty-state p     { font-size: 14px; }
+
+    /* BROADCAST PANEL */
+    .broadcast-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 28px;
+    }
+    .broadcast-panel h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+    .broadcast-row { display: flex; gap: 8px; }
+    .broadcast-row input {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 14px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+    .broadcast-row input:focus { border-color: var(--accent2); }
+    .broadcast-result {
+      font-size: 12px;
+      color: var(--green);
+      margin-top: 8px;
+      min-height: 16px;
+    }
+
+    /* MODAL */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      width: 100%;
+      max-width: 480px;
+      padding: 28px;
+    }
+    .modal h2 { font-size: 16px; font-weight: 700; margin-bottom: 20px; }
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 5px; font-weight: 500; }
+    .field input, .field select, .field textarea {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 12px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      font-family: inherit;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent2); }
+    .field select option { background: var(--surface2); }
+    .field textarea { resize: vertical; min-height: 72px; }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+    .field-hint { font-size: 11px; color: var(--text3); margin-top: 4px; }
+
+    /* COINZILLA SECTION */
+    .coinzilla-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 28px;
+    }
+    .coinzilla-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    .coinzilla-section p  { font-size: 12px; color: var(--text2); margin-bottom: 14px; }
+    .coinzilla-links { display: flex; gap: 10px; flex-wrap: wrap; }
+    .coinzilla-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--accent2);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      transition: border-color .15s;
+    }
+    .coinzilla-link:hover { border-color: var(--accent2); }
+    .verified-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; }
+
+    /* TOAST */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-size: 13px;
+      color: var(--text);
+      z-index: 9999;
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all .25s;
+      max-width: 320px;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.success { border-color: var(--green); }
+    .toast.error   { border-color: var(--red); }
+
+    @media (max-width: 640px) {
+      .stats-row { grid-template-columns: 1fr 1fr; }
+      .field-row  { grid-template-columns: 1fr; }
+      .broadcast-row { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="nav">
+    <a class="nav-logo" href="/">THROW <span>/ Ads</span></a>
+    <span class="nav-badge" id="active-count">— active</span>
+  </nav>
+
+  <div class="page">
+
+    <!-- STATS -->
+    <div class="stats-row" id="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Total Campaigns</div>
+        <div class="stat-value" id="stat-total">—</div>
+        <div class="stat-sub">all time</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Active</div>
+        <div class="stat-value" id="stat-active">—</div>
+        <div class="stat-sub">running now</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Impressions</div>
+        <div class="stat-value" id="stat-impr">—</div>
+        <div class="stat-sub">across all campaigns</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Budget</div>
+        <div class="stat-value" id="stat-budget">—</div>
+        <div class="stat-sub">committed spend</div>
+      </div>
+    </div>
+
+    <!-- COINZILLA -->
+    <div class="coinzilla-section">
+      <h3><span class="verified-dot"></span> &nbsp;Coinzilla — Verified</h3>
+      <p>Your site is verified. Manage ad zones, view earnings, and configure placements directly in the Coinzilla dashboard.</p>
+      <div class="coinzilla-links">
+        <a class="coinzilla-link" href="https://coinzilla.com/dashboard" target="_blank" rel="noopener">
+          📊 Coinzilla Dashboard
+        </a>
+        <a class="coinzilla-link" href="https://coinzilla.com/dashboard/zones" target="_blank" rel="noopener">
+          🗂️ Manage Zones
+        </a>
+        <a class="coinzilla-link" href="https://coinzilla.com/dashboard/earnings" target="_blank" rel="noopener">
+          💰 Earnings
+        </a>
+        <a class="coinzilla-link" href="https://coinzilla.com/dashboard/stats" target="_blank" rel="noopener">
+          📈 Stats
+        </a>
+      </div>
+    </div>
+
+    <!-- PUSH BROADCAST -->
+    <div class="broadcast-panel">
+      <h3>Push Broadcast</h3>
+      <div class="broadcast-row">
+        <input id="bc-title" placeholder="Title — e.g. 🔥 New sponsor live in THROW" />
+        <input id="bc-body"  placeholder="Body message" />
+        <button class="btn btn-ghost" onclick="sendBroadcast()">Send</button>
+      </div>
+      <div class="broadcast-result" id="bc-result"></div>
+    </div>
+
+    <!-- CAMPAIGNS -->
+    <div class="section-header">
+      <div class="section-title">House Campaigns</div>
+      <button class="btn btn-primary" onclick="openModal()">+ New Campaign</button>
+    </div>
+
+    <div class="campaigns-table">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Advertiser</th>
+              <th>Status</th>
+              <th>Budget</th>
+              <th>CPM</th>
+              <th>Impressions</th>
+              <th>Dates</th>
+              <th>Target</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="campaigns-body">
+            <tr><td colspan="8"><div class="empty-state"><div class="icon">📭</div><p>Loading campaigns…</p></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- end .page -->
+
+  <!-- CREATE/EDIT MODAL -->
+  <div class="modal-overlay" id="modal-overlay" onclick="closeModalOnOverlay(event)">
+    <div class="modal">
+      <h2 id="modal-title">New Campaign</h2>
+      <input type="hidden" id="edit-id" />
+
+      <div class="field">
+        <label>Advertiser name</label>
+        <input id="f-advertiser" placeholder="e.g. Coinzilla, MCFL, etc." />
+      </div>
+      <div class="field">
+        <label>Ad copy <span style="color:var(--text3)">(max 120 chars)</span></label>
+        <textarea id="f-copy" placeholder="Short tagline or call to action…" maxlength="120"></textarea>
+      </div>
+      <div class="field">
+        <label>Image URL <span style="color:var(--text3)">(strip tile / logo)</span></label>
+        <input id="f-imageUrl" placeholder="https://…" />
+        <div class="field-hint">Shown in sponsor strips. Recommended: square, 200×200+</div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Budget ($)</label>
+          <input id="f-budget" type="number" min="0" step="0.01" placeholder="0.00" />
+        </div>
+        <div class="field">
+          <label>CPM ($)</label>
+          <input id="f-cpm" type="number" min="0" step="0.01" placeholder="0.00" />
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Start date</label>
+          <input id="f-startDate" type="date" />
+        </div>
+        <div class="field">
+          <label>End date</label>
+          <input id="f-endDate" type="date" />
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Target</label>
+          <select id="f-target">
+            <option value="all">All users</option>
+            <option value="venue">Venue only</option>
+            <option value="wallet">Wallet connected</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Status</label>
+          <select id="f-status">
+            <option value="active">Active</option>
+            <option value="paused">Paused</option>
+            <option value="ended">Ended</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" id="modal-save-btn" onclick="saveCampaign()">Save Campaign</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const WATCHER = 'https://gsb-swarm-production.up.railway.app/api/throw';
+    let campaigns = [];
+
+    // ── LOAD ──────────────────────────────────────────────────────────────────
+    async function load() {
+      try {
+        const r = await fetch(`${WATCHER}/campaigns`);
+        campaigns = await r.json();
+        render();
+      } catch(e) {
+        showToast('Failed to load campaigns: ' + e.message, 'error');
+      }
+    }
+
+    function render() {
+      const tbody = document.getElementById('campaigns-body');
+      const active = campaigns.filter(c => c.status === 'active');
+      const totalImpr = campaigns.reduce((s, c) => s + (c.impressions || 0), 0);
+      const totalBudget = campaigns.reduce((s, c) => s + (parseFloat(c.budget) || 0), 0);
+
+      document.getElementById('stat-total').textContent  = campaigns.length;
+      document.getElementById('stat-active').textContent = active.length;
+      document.getElementById('stat-impr').textContent   = totalImpr.toLocaleString();
+      document.getElementById('stat-budget').textContent = '$' + totalBudget.toFixed(2);
+      document.getElementById('active-count').textContent = active.length + ' active';
+
+      if (!campaigns.length) {
+        tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="icon">📭</div><p>No campaigns yet — click <strong>+ New Campaign</strong> to add one.</p></div></td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = campaigns.map(c => {
+        const thumb = c.imageUrl
+          ? `<img class="ad-thumb" src="${escHtml(c.imageUrl)}" alt="" onerror="this.style.display='none'" />`
+          : `<div class="ad-thumb-placeholder">📣</div>`;
+        const statusClass = { active: 'status-active', paused: 'status-paused', ended: 'status-ended' }[c.status] || 'status-ended';
+        const dates = [c.startDate, c.endDate].filter(Boolean).join(' → ') || '—';
+        return `<tr>
+          <td>
+            <div class="advertiser-cell">
+              ${thumb}
+              <div>
+                <div class="ad-name">${escHtml(c.advertiser || '—')}</div>
+                <div class="ad-copy">${escHtml(c.copy || '')}</div>
+              </div>
+            </div>
+          </td>
+          <td><span class="status-badge ${statusClass}">${c.status}</span></td>
+          <td>$${parseFloat(c.budget || 0).toFixed(2)}</td>
+          <td>$${parseFloat(c.cpm || 0).toFixed(2)}</td>
+          <td>${(c.impressions || 0).toLocaleString()}</td>
+          <td style="font-size:12px;color:var(--text2)">${escHtml(dates)}</td>
+          <td style="font-size:12px;color:var(--text2)">${escHtml(c.target || 'all')}</td>
+          <td>
+            <div class="actions-cell">
+              <button class="btn btn-ghost btn-sm" onclick="editCampaign('${c.id}')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteCampaign('${c.id}')">Del</button>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    // ── MODAL ─────────────────────────────────────────────────────────────────
+    function openModal(campaign) {
+      document.getElementById('modal-title').textContent = campaign ? 'Edit Campaign' : 'New Campaign';
+      document.getElementById('edit-id').value    = campaign?.id || '';
+      document.getElementById('f-advertiser').value = campaign?.advertiser || '';
+      document.getElementById('f-copy').value       = campaign?.copy || '';
+      document.getElementById('f-imageUrl').value   = campaign?.imageUrl || '';
+      document.getElementById('f-budget').value     = campaign?.budget || '';
+      document.getElementById('f-cpm').value        = campaign?.cpm || '';
+      document.getElementById('f-startDate').value  = campaign?.startDate || '';
+      document.getElementById('f-endDate').value    = campaign?.endDate || '';
+      document.getElementById('f-target').value     = campaign?.target || 'all';
+      document.getElementById('f-status').value     = campaign?.status || 'active';
+      document.getElementById('modal-overlay').classList.add('open');
+    }
+
+    function editCampaign(id) {
+      const c = campaigns.find(c => c.id === id);
+      if (c) openModal(c);
+    }
+
+    function closeModal() {
+      document.getElementById('modal-overlay').classList.remove('open');
+    }
+
+    function closeModalOnOverlay(e) {
+      if (e.target === document.getElementById('modal-overlay')) closeModal();
+    }
+
+    async function saveCampaign() {
+      const id  = document.getElementById('edit-id').value;
+      const btn = document.getElementById('modal-save-btn');
+      const data = {
+        advertiser: document.getElementById('f-advertiser').value.trim(),
+        copy:       document.getElementById('f-copy').value.trim(),
+        imageUrl:   document.getElementById('f-imageUrl').value.trim(),
+        budget:     document.getElementById('f-budget').value,
+        cpm:        document.getElementById('f-cpm').value,
+        startDate:  document.getElementById('f-startDate').value,
+        endDate:    document.getElementById('f-endDate').value,
+        target:     document.getElementById('f-target').value,
+        status:     document.getElementById('f-status').value,
+      };
+
+      if (!data.advertiser) { showToast('Advertiser name required', 'error'); return; }
+
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+
+      try {
+        const url    = id ? `${WATCHER}/campaigns/${id}` : `${WATCHER}/campaigns`;
+        const method = id ? 'PUT' : 'POST';
+        const r = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        const saved = await r.json();
+        if (!r.ok) throw new Error(saved.error || r.status);
+        closeModal();
+        await load();
+        showToast(id ? 'Campaign updated' : 'Campaign created', 'success');
+      } catch(e) {
+        showToast('Save failed: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save Campaign';
+      }
+    }
+
+    async function deleteCampaign(id) {
+      const c = campaigns.find(c => c.id === id);
+      if (!confirm(`Delete "${c?.advertiser}"? This cannot be undone.`)) return;
+      try {
+        const r = await fetch(`${WATCHER}/campaigns/${id}`, { method: 'DELETE' });
+        if (!r.ok) throw new Error(await r.text());
+        await load();
+        showToast('Campaign deleted', 'success');
+      } catch(e) {
+        showToast('Delete failed: ' + e.message, 'error');
+      }
+    }
+
+    // ── BROADCAST ─────────────────────────────────────────────────────────────
+    async function sendBroadcast() {
+      const title = document.getElementById('bc-title').value.trim();
+      const body  = document.getElementById('bc-body').value.trim();
+      const res   = document.getElementById('bc-result');
+
+      if (!title || !body) { showToast('Title and body required', 'error'); return; }
+
+      res.textContent = 'Sending…';
+      res.style.color = 'var(--text2)';
+
+      try {
+        const r = await fetch(`${WATCHER}/broadcast`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, body }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || r.status);
+        res.textContent = `✓ Sent to ${d.sent} / ${d.total} subscribers`;
+        res.style.color = 'var(--green)';
+        document.getElementById('bc-title').value = '';
+        document.getElementById('bc-body').value  = '';
+      } catch(e) {
+        res.textContent = '✗ ' + e.message;
+        res.style.color = 'var(--red)';
+      }
+    }
+
+    // ── TOAST ─────────────────────────────────────────────────────────────────
+    let toastTimer;
+    function showToast(msg, type = '') {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = 'toast show ' + type;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { el.className = 'toast'; }, 3000);
+    }
+
+    function escHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ── ENTER KEY ─────────────────────────────────────────────────────────────
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    load();
+  </script>
+</body>
+</html>
