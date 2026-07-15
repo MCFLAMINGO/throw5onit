@@ -595,6 +595,10 @@ function subscribeDemoCredits(myAddr) {
         upsertContact(data.fromName, data.fromAddr);
         showToast('👋 ' + data.fromName + ' added you — added back!');
       }
+      // Texas Hold'em invite — subscribe to table topic so poker_start reaches this phone
+      if (data.event === 'poker_invite' && toMatch && data.roomCode) {
+        acceptPokerInvite(data);
+      }
       // Sponsor push via MQTT — update active sponsor for this session
       if (data.event === 'sponsor_push') {
         const sp = data.sponsor || null;
@@ -1245,6 +1249,38 @@ async function sendStablecoin(toAddr, usdAmount) {
   }
 
   await _sendToken(tokenAddr, decimals, toAddr, netAmount);
+}
+
+// Escrow deposit — full face amount, no 1% throw fee.
+// Poker rake / bet fees are taken at settlement from the pot, not on each throw-in.
+async function sendEscrowDeposit(escrowAddr, usdAmount) {
+  if (!escrowAddr) throw new Error('Escrow address missing');
+  if (!(usdAmount > 0)) return null;
+  if (DEMO_MODE) {
+    if (state.total < usdAmount) throw new Error('Insufficient demo balance');
+    state.total   = Math.max(0, state.total - usdAmount);
+    state.pathUSD = state.total;
+    try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
+    renderWalletUI();
+    return '0xESCROW' + Math.random().toString(16).slice(2, 12).toUpperCase();
+  }
+  let tokenAddr;
+  if (state.usdc >= usdAmount) {
+    tokenAddr = USDC_ADDR;
+  } else if (state.pathUSD >= usdAmount) {
+    tokenAddr = PATHUSD_ADDR;
+  } else if ((state.pathUSD + state.usdc) >= usdAmount) {
+    if (state.usdc > 0.001) {
+      await _sendToken(USDC_ADDR, 6, escrowAddr, state.usdc);
+      const remainder = usdAmount - state.usdc;
+      if (remainder > 0.001) await _sendToken(PATHUSD_ADDR, 6, escrowAddr, remainder);
+      return;
+    }
+    tokenAddr = PATHUSD_ADDR;
+  } else {
+    throw new Error('Insufficient balance');
+  }
+  return await _sendToken(tokenAddr, 6, escrowAddr, usdAmount);
 }
 
 // Accrue venue fee locally — aggregated by venueId, paid out monthly from Swarm dashboard
@@ -2309,7 +2345,10 @@ function openBetSetup() {
 async function startPot() {
   // Texas Hold'em branches off into its own setup flow
   if (state.bet.structure === 'texas-holdem') {
-    openPokerSetup();
+    openPokerSetup().catch(e => {
+      console.error('openPokerSetup failed', e);
+      alert('Could not open table: ' + (e.message || e));
+    });
     return;
   }
   const desc = document.getElementById('bet-description').value.trim();
@@ -2985,6 +3024,62 @@ function moneyRain(count = 6) {
     container.appendChild(p);
   }
   setTimeout(() => container.remove(), 2000);
+}
+
+// Make it rain — throw the selected amount at EVERY peer in the room (casino tip energy)
+let _raining = false;
+async function executeMakeItRain() {
+  if (_raining) return;
+  const amount = state.throwAmount || 5;
+  const targets = (typeof getAllTargets === 'function' ? getAllTargets() : null)
+    || state.roomPeers
+    || [];
+  const peers = (targets || []).filter(t => t && t.addr && t.addr.toLowerCase() !== (state.account?.address || '').toLowerCase());
+  if (!peers.length) {
+    showToast('Need 2+ friends in the room to make it rain');
+    return;
+  }
+  const totalNeeded = amount * peers.length;
+  if ((state.total || 0) < totalNeeded) {
+    showToast('Need $' + totalNeeded.toFixed(2) + ' to rain on ' + peers.length + ' people');
+    return;
+  }
+
+  _raining = true;
+  const btn = document.getElementById('btn-make-it-rain');
+  if (btn) { btn.disabled = true; btn.textContent = 'RAINING…'; }
+  moneyRain(Math.min(24, 6 + peers.length * 3));
+  showTxFlash('💸', '$' + amount + ' × ' + peers.length, 'Making it rain…');
+
+  let ok = 0;
+  const fromAddr = state.account.address;
+  for (const peer of peers) {
+    try {
+      await sendStablecoin(peer.addr, amount);
+      notifyReceiverDirect(peer.addr, amount);
+      if (state.inRoom) publishThrow(fromAddr, peer.addr, amount);
+      touchContact(peer.addr);
+      points.add(amount);
+      ok++;
+    } catch (e) {
+      console.warn('[THROW] rain failed for', peer.addr, e && (e.shortMessage || e.message));
+    }
+  }
+
+  hideTxFlash();
+  if (ok > 0) {
+    showTxFlash('✅', '$' + (amount * ok).toFixed(2), 'Rained on ' + ok + ' pocket' + (ok === 1 ? '' : 's') + '!');
+    moneyRain(10);
+  } else {
+    showToast('Rain failed — check balance');
+  }
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = '💸 Make It Rain';
+  }
+  _raining = false;
+  setTimeout(() => { hideTxFlash(); showScreen('wallet'); }, 1800);
+  if (!DEMO_MODE) { try { await refreshBalances(); } catch(_) {} }
 }
 
 function shortAddr(addr) {
@@ -3712,7 +3807,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   initContactOverlay();
 
   /* ── Throw screen ── */
-  document.getElementById('btn-make-it-rain').onclick = () => moneyRain(12);
+  const rainBtn = document.getElementById('btn-make-it-rain');
+  if (rainBtn) rainBtn.onclick = () => executeMakeItRain();
   document.getElementById('btn-qr-receive').onclick = () => openAddCashScreen();
   document.getElementById('btn-load-cash').onclick  = () => openAddCashScreen();
 
@@ -3813,8 +3909,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Poker wiring
   const pokerBack = document.getElementById('poker-setup-back');
   if (pokerBack) pokerBack.onclick = () => { try { leavePokerRoom(); } catch(_) {} showScreen('bet-setup'); };
+  const pokerTableBack = document.getElementById('poker-table-back');
+  if (pokerTableBack) pokerTableBack.onclick = () => {
+    if (confirm('Leave the table?')) {
+      try { leavePokerRoom(); } catch(_) {}
+      showScreen('wallet');
+    }
+  };
   const pokerStart = document.getElementById('btn-poker-start');
-  if (pokerStart) pokerStart.onclick = () => startPokerGame(state.poker?.seats || [], state.poker?.roomCode);
+  if (pokerStart) pokerStart.onclick = () => {
+    startPokerGame(state.poker?.seats || [], state.poker?.roomCode).catch(e => {
+      console.error('startPokerGame failed', e);
+      alert('Could not start: ' + (e.message || e));
+      pokerStart.disabled = false;
+      pokerStart.textContent = 'Start Game';
+    });
+  };
   const pokerAdv = document.getElementById('btn-poker-advance');
   if (pokerAdv) pokerAdv.onclick = onPokerAdvanceClick;
   const pokerPayout = document.getElementById('btn-poker-payout');
@@ -4232,6 +4342,7 @@ function recordIncomingThrow(amount, from) {
 
 /* ═══════════════════════════════════════════════════════════════════════
    22. TEXAS HOLD'EM POKER ENGINE
+   Real cards at the table · phone bets · shared escrow pot · make-it-rain energy
    ═════════════════════════════════════════════════════════════════════ */
 
 const POKER_STARTING_STACK = 50;
@@ -4240,6 +4351,7 @@ const POKER_BB = 2;
 const POKER_MAX_SEATS = 6;
 
 let _pokerSelectedWinnerAddr = null;
+let _pokerSeenActionKeys = new Set();
 
 function pokerTopic(roomCode) {
   return 'throw5/room/' + roomCode + '/poker';
@@ -4257,11 +4369,73 @@ function isMyPokerTurn() {
   return seat.addr.toLowerCase() === p.myAddr.toLowerCase();
 }
 
-function openPokerSetup() {
+function _pokerActionKey(data) {
+  return [data.event, data.seatIdx, data.action, data.amount, data.ts].join('|');
+}
+
+async function openPokerSetup() {
   const myAddr = state.account?.address;
   if (!myAddr) { alert('Wallet not ready'); return; }
-  // Derive a roomCode from a fresh random — reuse the same scheme as startPot
-  const code = Math.random().toString(16).slice(2, 8).toUpperCase();
+
+  // Create a fresh escrow wallet for the pot — same model as regular bets.
+  // Without this, live blinds/calls/raises have nowhere to land.
+  let roomCode;
+  try {
+    if (!DEMO_MODE) {
+      const { ethers } = await getViem();
+      const escrowWallet = ethers.Wallet.createRandom();
+      Object.assign(state.bet, {
+        active: true,
+        isHost: true,
+        description: "Texas Hold'em",
+        structure: 'texas-holdem',
+        escrowKey: escrowWallet.privateKey,
+        escrowAddr: escrowWallet.address,
+        hostAddr: myAddr,
+        amountPer: POKER_STARTING_STACK,
+        players: [],
+        total: 0,
+      });
+      roomCode = escrowWallet.address.slice(2, 8).toUpperCase();
+      try {
+        localStorage.setItem('throw_active_bet', JSON.stringify({
+          active: true,
+          isHost: true,
+          description: "Texas Hold'em",
+          structure: 'texas-holdem',
+          escrowKey: escrowWallet.privateKey,
+          escrowAddr: escrowWallet.address,
+          hostAddr: myAddr,
+          roomCode,
+          amountPer: POKER_STARTING_STACK,
+          players: [],
+          total: 0,
+        }));
+      } catch(_) {}
+    } else {
+      // Demo still needs a stable room code + placeholder escrow addr for invites
+      roomCode = Math.random().toString(16).slice(2, 8).toUpperCase();
+      Object.assign(state.bet, {
+        active: true,
+        isHost: true,
+        description: "Texas Hold'em",
+        structure: 'texas-holdem',
+        escrowKey: null,
+        escrowAddr: '0xDEMO' + roomCode.toLowerCase().padEnd(40, '0'),
+        hostAddr: myAddr,
+        amountPer: POKER_STARTING_STACK,
+        players: [],
+        total: 0,
+      });
+    }
+  } catch (e) {
+    alert('Could not open table: ' + (e.message || e));
+    return;
+  }
+
+  state.bet.roomCode = roomCode;
+  _pokerSeenActionKeys = new Set();
+  _pokerSelectedWinnerAddr = null;
 
   state.poker = {
     seats: [],
@@ -4271,20 +4445,20 @@ function openPokerSetup() {
     dealerIdx: 0,
     sbIdx: 1,
     bbIdx: 2,
-    roomCode: code,
+    roomCode,
     isHost: true,
     myAddr,
     structure: 'texas-holdem',
     demo: !!DEMO_MODE,
     currentBet: POKER_BB,
     lastRaiser: null,
+    escrowAddr: state.bet.escrowAddr,
   };
 
   showScreen('poker-setup');
   renderPokerSetup();
-  // Host enters MQTT room so players can subscribe
-  enterRoom(code, {}).catch(() => {});
-  _subscribePokerTopic(code);
+  enterRoom(roomCode, {}).catch(() => {});
+  _subscribePokerTopic(roomCode);
 }
 
 function renderPokerSetup() {
@@ -4295,7 +4469,6 @@ function renderPokerSetup() {
   const startBtn = document.getElementById('btn-poker-start');
   if (!orbit || !crewRow) return;
 
-  // Orbit: render seats (filled + empty) in a circle around orb
   const totalSlots = POKER_MAX_SEATS;
   const radius = 110;
   orbit.innerHTML = '';
@@ -4311,15 +4484,24 @@ function renderPokerSetup() {
       el.style.background = addrToColor(seat.addr);
       el.style.color = '#fff';
       el.innerHTML = seat.name.slice(0,2);
-      const role = i === 0 ? 'D' : i === 1 ? 'SB' : i === 2 ? 'BB' : '';
-      if (role) {
+      const role = i === 0 ? 'D' : (p.seats.length === 2
+        ? (i === 0 ? 'D/SB' : 'BB')
+        : (i === 1 ? 'SB' : i === 2 ? 'BB' : ''));
+      // Preview badges: heads-up dealer is SB
+      let badgeRole = '';
+      if (p.seats.length === 2) {
+        badgeRole = i === 0 ? 'SB' : (i === 1 ? 'BB' : '');
+        if (i === 0) badgeRole = 'D'; // show dealer; SB posts from dealer in HU at start
+      } else {
+        badgeRole = i === 0 ? 'D' : i === 1 ? 'SB' : i === 2 ? 'BB' : '';
+      }
+      if (badgeRole) {
         const badge = document.createElement('div');
-        badge.className = role === 'D' ? 'dealer-badge' : role === 'SB' ? 'sb-badge' : 'bb-badge';
-        badge.textContent = role;
+        badge.className = badgeRole === 'D' ? 'dealer-badge' : badgeRole === 'SB' ? 'sb-badge' : 'bb-badge';
+        badge.textContent = badgeRole;
         el.appendChild(badge);
       }
       el.onclick = () => {
-        // Remove seat
         p.seats.splice(i, 1);
         renderPokerSetup();
       };
@@ -4331,7 +4513,6 @@ function renderPokerSetup() {
     orbit.appendChild(el);
   }
 
-  // Crew row (contacts + optional self)
   const contacts = getContacts();
   const joinSelf = document.getElementById('poker-join-self')?.checked;
   const selfAddr = state.account?.address;
@@ -4367,49 +4548,185 @@ function renderPokerSetup() {
   if (startBtn) startBtn.disabled = p.seats.length < 2;
 }
 
-function startPokerGame(seats, roomCode) {
+function _assignPokerBlindIndexes(seatCount) {
+  // Standard: dealer=0. Multiway SB=1 BB=2.
+  // Heads-up: dealer posts SB, other posts BB.
+  if (seatCount === 2) {
+    return { dealerIdx: 0, sbIdx: 0, bbIdx: 1 };
+  }
+  return {
+    dealerIdx: 0,
+    sbIdx: seatCount >= 2 ? 1 : 0,
+    bbIdx: seatCount >= 3 ? 2 : 1,
+  };
+}
+
+function _invitePokerPlayers(seats, roomCode) {
+  const myAddr = state.account?.address || '';
+  const hostName = (() => {
+    try { return localStorage.getItem('throw_my_name') || getHandle() || myAddr.slice(0, 6); }
+    catch(_) { return myAddr.slice(0, 6); }
+  })();
+  for (const seat of seats) {
+    if (!seat?.addr) continue;
+    if (seat.addr.toLowerCase() === myAddr.toLowerCase()) continue;
+    const payload = JSON.stringify({
+      event: 'poker_invite',
+      to: seat.addr,
+      roomCode,
+      escrowAddr: state.bet.escrowAddr || null,
+      hostAddr: myAddr,
+      hostName,
+      seats: seats.map(s => ({ addr: s.addr, name: s.name })),
+      blinds: { sb: POKER_SB, bb: POKER_BB },
+      stack: POKER_STARTING_STACK,
+      demo: !!DEMO_MODE,
+      ts: Date.now(),
+    });
+    try {
+      const topic = 'throw5/wallet/' + seat.addr.toLowerCase() + '/credit';
+      const clientId = 'poker_inv_' + Math.random().toString(36).slice(2, 8);
+      const c = mqtt.connect(MQTT_BROKER, { clientId, clean: true, connectTimeout: 6000, reconnectPeriod: 0 });
+      c.on('connect', () => {
+        c.publish(topic, payload, { qos: 1 }, () => { try { c.end(true); } catch(_) {} });
+      });
+      c.on('error', () => { try { c.end(true); } catch(_) {} });
+    } catch(_) {}
+  }
+}
+
+function acceptPokerInvite(data) {
+  if (!data?.roomCode) return;
+  // Don't clobber an active host table
+  if (state.poker?.isHost && state.poker?.street && state.poker.street !== 'settled') return;
+  if (state.poker?.roomCode === data.roomCode && !state.poker?.isHost) {
+    _subscribePokerTopic(data.roomCode);
+    return;
+  }
+
+  state.poker = {
+    seats: (data.seats || []).map(s => ({
+      addr: s.addr,
+      name: s.name,
+      role: 'player',
+      stack: POKER_STARTING_STACK,
+      bet: 0,
+      folded: false,
+      acted: false,
+    })),
+    pot: 0,
+    street: 'waiting',
+    currentSeat: 0,
+    dealerIdx: 0,
+    sbIdx: 1,
+    bbIdx: 2,
+    roomCode: data.roomCode,
+    escrowAddr: data.escrowAddr || null,
+    isHost: false,
+    myAddr: state.account?.address,
+    structure: 'texas-holdem',
+    demo: !!DEMO_MODE,
+    currentBet: POKER_BB,
+    lastRaiser: null,
+  };
+  Object.assign(state.bet, {
+    active: true,
+    isHost: false,
+    structure: 'texas-holdem',
+    description: "Texas Hold'em",
+    escrowAddr: data.escrowAddr || null,
+    hostAddr: data.hostAddr || null,
+    roomCode: data.roomCode,
+  });
+
+  _subscribePokerTopic(data.roomCode);
+  enterRoom(data.roomCode, {}).catch(() => {});
+  showToast((data.hostName || 'Host') + ' seated you at Texas Hold\'em');
+  showTxFlash('🃏', '$1/$2', 'Joining table…');
+  setTimeout(() => hideTxFlash(), 2000);
+}
+
+async function startPokerGame(seats, roomCode) {
   const p = state.poker;
   if (!p || !p.isHost) return;
   if (!seats || seats.length < 2) return;
 
-  // Assign roles & post blinds
-  p.dealerIdx = 0;
-  p.sbIdx = seats.length >= 2 ? 1 : 0;
-  p.bbIdx = seats.length >= 3 ? 2 : (seats.length === 2 ? 0 : 1);
+  const startBtn = document.getElementById('btn-poker-start');
+  if (startBtn) {
+    startBtn.disabled = true;
+    startBtn.textContent = 'Seating crew…';
+  }
+
+  // Ensure escrow exists (openPokerSetup should have created it)
+  if (!DEMO_MODE && !state.bet.escrowAddr) {
+    try {
+      const { ethers } = await getViem();
+      const w = ethers.Wallet.createRandom();
+      state.bet.escrowKey = w.privateKey;
+      state.bet.escrowAddr = w.address;
+      p.escrowAddr = w.address;
+    } catch (e) {
+      alert('Could not create pot wallet: ' + (e.message || e));
+      if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start Game'; }
+      return;
+    }
+  }
+  p.escrowAddr = state.bet.escrowAddr || p.escrowAddr;
+  p.roomCode = roomCode || p.roomCode || state.bet.roomCode;
+
+  // Ping seated phones so they subscribe before poker_start
+  _invitePokerPlayers(seats, p.roomCode);
+  await new Promise(r => setTimeout(r, 1200));
+
+  const idxs = _assignPokerBlindIndexes(seats.length);
+  p.dealerIdx = idxs.dealerIdx;
+  p.sbIdx = idxs.sbIdx;
+  p.bbIdx = idxs.bbIdx;
 
   seats.forEach((s, i) => {
     s.role = i === p.dealerIdx ? 'dealer' : i === p.sbIdx ? 'sb' : i === p.bbIdx ? 'bb' : 'player';
+    if (seats.length === 2 && i === p.dealerIdx) s.role = 'dealer'; // HU dealer is also SB
     s.bet = 0;
     s.folded = false;
     s.acted = false;
     s.stack = s.stack || POKER_STARTING_STACK;
   });
 
-  // Post blinds
-  const sb = seats[p.sbIdx]; const bb = seats[p.bbIdx];
+  const sb = seats[p.sbIdx];
+  const bb = seats[p.bbIdx];
   const sbAmt = Math.min(POKER_SB, sb.stack);
   const bbAmt = Math.min(POKER_BB, bb.stack);
   sb.stack -= sbAmt; sb.bet = sbAmt;
   bb.stack -= bbAmt; bb.bet = bbAmt;
+  // HU: dealer is SB — if same seat somehow, don't double-post
+  if (p.sbIdx === p.bbIdx) {
+    // shouldn't happen with _assignPokerBlindIndexes
+  }
   p.pot = sbAmt + bbAmt;
   p.currentBet = bbAmt;
   p.street = 'preflop';
-  // First action: UTG (seat after BB)
-  p.currentSeat = (p.bbIdx + 1) % seats.length;
-  p.lastRaiser = p.bbIdx;
+  // First action: UTG (seat after BB). Heads-up: SB/dealer acts first preflop.
+  p.currentSeat = seats.length === 2 ? p.sbIdx : ((p.bbIdx + 1) % seats.length);
+  // Blinds are not aggression — leave lastRaiser null so BB keeps the option
+  p.lastRaiser = null;
 
-  // Post blinds — demo debits locally, live sends real money to escrow
-  const myLc = p.myAddr.toLowerCase();
-  if (DEMO_MODE) {
-    if (sb.addr.toLowerCase() === myLc) { state.total = Math.max(0, state.total - sbAmt); state.pathUSD = state.total; }
-    if (bb.addr.toLowerCase() === myLc) { state.total = Math.max(0, state.total - bbAmt); state.pathUSD = state.total; }
-    try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
-    renderWalletUI();
-  } else {
-    // Live: host posts blind(s) they owe directly into escrow
-    if (sb.addr.toLowerCase() === myLc && sbAmt > 0) sendStablecoin(state.bet.escrowAddr, sbAmt).catch(()=>{});
-    if (bb.addr.toLowerCase() === myLc && bbAmt > 0) sendStablecoin(state.bet.escrowAddr, bbAmt).catch(()=>{});
-  }
+  // Post blinds — demo already deducted from stacks above for table math;
+  // also debit real/demo wallet for seats that are ME.
+  const myLc = (p.myAddr || '').toLowerCase();
+  const postMine = async (seat, amt) => {
+    if (!amt || seat.addr.toLowerCase() !== myLc) return;
+    if (DEMO_MODE) {
+      state.total = Math.max(0, state.total - amt);
+      state.pathUSD = state.total;
+      try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
+      renderWalletUI();
+    } else if (p.escrowAddr) {
+      try { await sendEscrowDeposit(p.escrowAddr, amt); }
+      catch (e) { console.error('poker blind escrow failed', e); }
+    }
+  };
+  await postMine(sb, sbAmt);
+  if (p.sbIdx !== p.bbIdx) await postMine(bb, bbAmt);
 
   _publishPoker({
     event: 'poker_start',
@@ -4417,11 +4734,17 @@ function startPokerGame(seats, roomCode) {
     pot: p.pot,
     street: p.street,
     currentSeat: p.currentSeat,
+    dealerIdx: p.dealerIdx,
+    sbIdx: p.sbIdx,
+    bbIdx: p.bbIdx,
+    currentBet: p.currentBet,
+    lastRaiser: p.lastRaiser,
     roomCode: p.roomCode,
-    escrowAddr: state.bet.escrowAddr || null,
+    escrowAddr: p.escrowAddr || state.bet.escrowAddr || null,
     ts: Date.now(),
   });
 
+  if (startBtn) startBtn.textContent = 'Start Game';
   showScreen('poker-table');
   renderPokerTable();
   pokerNextTurn();
@@ -4455,20 +4778,22 @@ function pokerHandleAction(action, amount) {
   if (action === 'fold') {
     // no money moves
   } else if (action === 'check') {
-    if (callAmt > 0) return; // can't check if there's a bet to call
+    if (callAmt > 0) return;
   } else if (action === 'call') {
     add = Math.min(callAmt, seat.stack);
     newStack = seat.stack - add;
   } else if (action === 'raise') {
-    // amount = the total raise-to value (e.g. raise TO $10, not raise BY $10)
+    // amount = raise-TO total
     const raiseTo = Math.max(p.currentBet + 1, amount || p.currentBet + 1);
     const total = Math.min(raiseTo - seat.bet, seat.stack);
     if (total <= 0) return;
     add = total;
     newStack = seat.stack - add;
+  } else if (action === 'allin') {
+    add = seat.stack;
+    newStack = 0;
   }
 
-  // Money moves: demo debits locally, live sends real money to shared escrow
   if (add > 0) {
     if (DEMO_MODE) {
       state.total = Math.max(0, state.total - add);
@@ -4481,15 +4806,19 @@ function pokerHandleAction(action, amount) {
         alert('Pot wallet not set up — cannot send live funds. Return to lobby.');
         return;
       }
-      sendStablecoin(escrow, add).catch(e => console.error('poker escrow send failed', e));
+      sendEscrowDeposit(escrow, add).catch(e => console.error('poker escrow send failed', e));
     }
   }
+
+  const outAction = (action === 'allin')
+    ? ((callAmt > 0 && add <= callAmt) ? 'call' : 'raise')
+    : action;
 
   _publishPoker({
     event: 'poker_action',
     addr: p.myAddr,
     seatIdx: p.currentSeat,
-    action,
+    action: outAction,
     amount: add,
     newStack,
     ts: Date.now(),
@@ -4501,7 +4830,7 @@ function _applyAction(data) {
   if (!p) return;
   const seat = p.seats[data.seatIdx];
   if (!seat) return;
-  seat.acted = true; // mark this seat as having acted this round
+  seat.acted = true;
   if (data.action === 'fold') {
     seat.folded = true;
   } else if (data.action === 'check') {
@@ -4515,16 +4844,13 @@ function _applyAction(data) {
     seat.stack = data.newStack;
     p.pot += data.amount;
     if (seat.bet > p.currentBet) p.currentBet = seat.bet;
-    // The raiser becomes the new lastRaiser — round ends when action returns to them
     p.lastRaiser = data.seatIdx;
-    // Allow all OTHER active players to act again (re-raise is now open to them)
     p.seats.forEach((s, i) => {
       if (i !== data.seatIdx && !s.folded) s.acted = false;
     });
   }
 
   if (p.isHost) {
-    // Advance turn or close round
     const active = p.seats.filter(s => !s.folded);
     if (active.length <= 1) {
       const winner = active[0];
@@ -4532,7 +4858,6 @@ function _applyAction(data) {
       return;
     }
 
-    // Find next non-folded seat
     let next = (p.currentSeat + 1) % p.seats.length;
     let safety = 0;
     while (p.seats[next].folded && safety < p.seats.length) {
@@ -4541,14 +4866,10 @@ function _applyAction(data) {
     }
     p.currentSeat = next;
 
-    // Round done: everyone active has matched currentBet (or is all-in)
-    // AND we've returned to the player who last raised (or all checked)
-    const roundDone = active.every(s => s.bet === p.currentBet || s.stack === 0);
-    const cycledToRaiser = p.lastRaiser !== null && next === p.lastRaiser;
-    const allChecked = p.currentBet === 0 && active.every(s => s.acted);
-
-    if (roundDone && (cycledToRaiser || allChecked)) {
-      // Auto-advance street
+    // Street ends when every active player has matched the bet AND acted since last raise
+    const everyoneMatched = active.every(s => s.bet === p.currentBet || s.stack === 0);
+    const everyoneActed = active.every(s => s.acted);
+    if (everyoneMatched && everyoneActed) {
       const nextStreet = p.street === 'preflop' ? 'flop'
         : p.street === 'flop' ? 'turn'
         : p.street === 'turn' ? 'river'
@@ -4565,14 +4886,12 @@ function _applyAction(data) {
 function pokerAdvanceStreet(street) {
   const p = state.poker;
   if (!p || !p.isHost) return;
-  // Reset bets + acted flags for new street
   p.seats.forEach(s => { s.bet = 0; s.acted = false; });
   p.currentBet = 0;
   p.street = street;
-  if (street === 'showdown') {
-    p.lastRaiser = null;
-  } else {
-    // First to act after dealer
+  p.lastRaiser = null;
+  if (street !== 'showdown') {
+    // First to act after dealer (postflop). Skip folded.
     let next = (p.dealerIdx + 1) % p.seats.length;
     let safety = 0;
     while (p.seats[next].folded && safety < p.seats.length) {
@@ -4580,21 +4899,25 @@ function pokerAdvanceStreet(street) {
       safety++;
     }
     p.currentSeat = next;
-    // lastRaiser = null means no one has raised yet this street
-    p.lastRaiser = null;
   }
   _publishPoker({
     event: 'poker_street',
     street,
     pot: p.pot,
     seats: p.seats,
+    currentSeat: p.currentSeat,
+    currentBet: 0,
+    lastRaiser: null,
+    dealerIdx: p.dealerIdx,
+    sbIdx: p.sbIdx,
+    bbIdx: p.bbIdx,
     ts: Date.now(),
   });
   renderPokerTable();
   if (street !== 'showdown') pokerNextTurn();
 }
 
-function pokerSettle(winnerAddr) {
+async function pokerSettle(winnerAddr) {
   const p = state.poker;
   if (!p || !p.isHost) return;
   const winner = p.seats.find(s => s.addr.toLowerCase() === winnerAddr.toLowerCase());
@@ -4608,37 +4931,44 @@ function pokerSettle(winnerAddr) {
     ts: Date.now(),
   });
 
-  // Pay winner
   if (DEMO_MODE) {
-    // Demo: credit locally if it's me, otherwise push via MQTT demo_credit
-    const myLc = p.myAddr.toLowerCase();
+    const myLc = (p.myAddr || '').toLowerCase();
     if (winner.addr.toLowerCase() === myLc) {
       state.total = (state.total || 0) + p.pot;
       state.pathUSD = state.total;
       try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
       renderWalletUI();
+    } else {
+      // Remote winner — credit via MQTT (don't also credit locally)
+      try {
+        const fakeHash = '0xPOKER' + Math.random().toString(16).slice(2, 12).toUpperCase();
+        _demoCreditGlobal(winner.addr, p.pot, fakeHash);
+      } catch(_) {}
     }
-    try {
-      const fakeHash = '0xPOKER' + Math.random().toString(16).slice(2,12).toUpperCase();
-      _demoCreditGlobal(winner.addr, p.pot, fakeHash);
-    } catch(_) {}
   } else {
-    // Live: drain escrow to winner using existing sponsor-tx path
-    // 3% rake to treasury first, remainder to winner
     const escrowPK = state.bet.escrowKey;
     if (escrowPK) {
       const fee = parseFloat((p.pot * 0.03).toFixed(6));
       const payout = parseFloat((p.pot - fee).toFixed(6));
       const wc = { _escrowPK: escrowPK };
       const pc = {};
-      if (fee > 0.0001)   _escrowSendExact(escrowPK, USDC_ADDR, TREASURY_ADDR, fee).catch(()=>{});
-      if (payout > 0.001) _escrowSend(wc, pc, winner.addr, payout).catch(()=>{});
+      try {
+        if (fee > 0.0001) await _escrowSendExact(escrowPK, USDC_ADDR, TREASURY_ADDR, fee);
+      } catch (e) { console.warn('poker rake failed', e); }
+      try {
+        if (payout > 0.001) await _escrowSend(wc, pc, winner.addr, payout);
+      } catch (e) { console.warn('poker payout failed', e); }
+      try { await _refillExecutor(escrowPK, fee); } catch(_) {}
+    } else {
+      alert('Escrow key missing — cannot pay out. Start a new table.');
     }
   }
 
-  // End hand
   p.street = 'settled';
+  moneyRain(8);
+  showTxFlash('🏆', '$' + p.pot, (winner.name || 'Winner') + ' wins!');
   renderPokerTable();
+  try { localStorage.removeItem('throw_active_bet'); } catch(_) {}
 }
 
 function renderPokerTable() {
@@ -4654,23 +4984,24 @@ function renderPokerTable() {
   const potEl = document.getElementById('poker-pot-total');
   if (potEl) potEl.textContent = '$' + (p.pot || 0);
 
-  // Stack line
   const stackText = document.getElementById('poker-stack-text');
   const mySeat = p.seats.find(s => s.addr.toLowerCase() === (p.myAddr || '').toLowerCase());
-  if (stackText) stackText.textContent = mySeat ? `YOUR STACK: $${(mySeat.stack || 0).toFixed(2)}` : 'SPECTATOR';
+  if (stackText) {
+    if (p.street === 'waiting') stackText.textContent = 'WAITING FOR DEAL…';
+    else stackText.textContent = mySeat ? `YOUR STACK: $${(mySeat.stack || 0).toFixed(2)}` : 'SPECTATOR';
+  }
 
-  // Orbit: seat avatars around orb
   const orbit = document.getElementById('poker-orbit');
   if (orbit) {
     orbit.innerHTML = '';
-    const n = p.seats.length;
+    const n = p.seats.length || 1;
     const radius = 120;
     p.seats.forEach((seat, i) => {
       const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
       const x = 50 + (radius / 2.2) * Math.cos(angle);
       const y = 50 + (radius / 2.2) * Math.sin(angle);
       const el = document.createElement('div');
-      const isCurrent = i === p.currentSeat && p.street !== 'settled' && p.street !== 'showdown';
+      const isCurrent = i === p.currentSeat && p.street !== 'settled' && p.street !== 'showdown' && p.street !== 'waiting';
       const isWinnerPick = _pokerSelectedWinnerAddr && _pokerSelectedWinnerAddr.toLowerCase() === seat.addr.toLowerCase();
       el.className = 'poker-avatar' + (seat.folded ? ' poker-seat-folded' : '') + (isCurrent ? ' poker-seat-active' : '') + (isWinnerPick ? ' poker-seat-winner' : '');
       el.style.cssText = `position:absolute;left:${x}%;top:${y}%;transform:translate(-50%,-50%);width:64px;min-height:64px;text-align:center;`;
@@ -4686,7 +5017,7 @@ function renderPokerTable() {
         <div style="font-size:10px;color:#4a9eff">$${(seat.stack || 0).toFixed(0)}</div>
         ${seat.bet > 0 ? `<div style="font-size:9px;color:#f39c12">bet $${seat.bet}</div>` : ''}
       `;
-      if (p.isHost && p.street === 'showdown') {
+      if (p.isHost && p.street === 'showdown' && !seat.folded) {
         el.style.cursor = 'pointer';
         el.onclick = () => {
           _pokerSelectedWinnerAddr = seat.addr;
@@ -4699,13 +5030,12 @@ function renderPokerTable() {
     });
   }
 
-  // Action panel
   const actionArea = document.getElementById('poker-action-area');
   const turnLabel  = document.getElementById('poker-turn-label');
   const btnsWrap   = document.getElementById('poker-action-buttons');
   const raiseRow   = document.getElementById('poker-raise-row');
   if (actionArea && turnLabel && btnsWrap) {
-    const showdown = p.street === 'showdown' || p.street === 'settled';
+    const showdown = p.street === 'showdown' || p.street === 'settled' || p.street === 'waiting';
     if (showdown) {
       actionArea.style.display = 'none';
       if (raiseRow) raiseRow.style.display = 'none';
@@ -4719,15 +5049,15 @@ function renderPokerTable() {
         turnLabel.textContent = 'YOUR TURN';
         const callAmt  = Math.max(0, (p.currentBet || 0) - (mySeat?.bet || 0));
         const canCheck = callAmt === 0;
+        const myStack  = mySeat?.stack || 0;
+        const myBet    = mySeat?.bet || 0;
 
-        // Raise scroller
         if (raiseRow) {
           raiseRow.style.display = 'flex';
-          const myStack    = mySeat?.stack || 0;
           const minRaiseTo = (p.currentBet || 0) + 1;
           raiseRow.querySelectorAll('.poker-raise-chip').forEach(chip => {
             const amt     = parseInt(chip.dataset.raiseamt, 10);
-            const visible = amt >= minRaiseTo && amt <= myStack + (mySeat?.bet || 0);
+            const visible = amt >= minRaiseTo && amt <= myStack + myBet;
             chip.style.display = visible ? '' : 'none';
             chip.classList.remove('active');
             chip.onclick = () => {
@@ -4740,7 +5070,6 @@ function renderPokerTable() {
 
         btnsWrap.innerHTML = '';
 
-        // THROW button = call/check (primary)
         const throwLabel = canCheck ? 'CHECK' : `THROW $${callAmt}`;
         const throwBtn = _mkActionBtn(throwLabel, () => {
           if (canCheck) pokerHandleAction('check');
@@ -4749,14 +5078,16 @@ function renderPokerTable() {
         throwBtn.style.cssText += ';background:var(--accent,#f39c12);font-size:18px;font-weight:800;padding:14px 0;width:100%;';
         btnsWrap.appendChild(throwBtn);
 
-        // RAISE button — uses selected chip or min raise
         const raiseBtn = _mkActionBtn('RAISE', () => {
           const raiseTo = p._selectedRaise || ((p.currentBet || 0) + 1);
           pokerHandleAction('raise', raiseTo);
         });
         btnsWrap.appendChild(raiseBtn);
 
-        // FOLD
+        if (myStack > 0) {
+          btnsWrap.appendChild(_mkActionBtn('ALL IN $' + myStack, () => pokerHandleAction('allin')));
+        }
+
         btnsWrap.appendChild(_mkActionBtn('FOLD', () => pokerHandleAction('fold')));
 
         if (!actionArea._flashed) {
@@ -4774,7 +5105,6 @@ function renderPokerTable() {
     }
   }
 
-  // Showdown controls (payout) — always host-only
   const showdownCtl = document.getElementById('poker-showdown-controls');
   if (showdownCtl) {
     const isShowdown = p.street === 'showdown' && p.isHost;
@@ -4841,7 +5171,7 @@ function _publishPoker(msg) {
       });
     }
   } catch(_) {}
-  // Also apply locally for host immediately (so host UI updates without round-trip)
+  // Apply locally immediately (host + actor) so UI doesn't wait on broker echo
   _handlePokerMessage(msg, { local: true });
 }
 
@@ -4851,26 +5181,55 @@ function _handlePokerMessage(data, opts) {
   if (!data || !data.event) return;
 
   if (data.event === 'poker_start') {
-    // Non-host player joining mid-stream: initialize state
     if (!state.poker || !state.poker.isHost) {
       state.poker = {
         seats: data.seats || [],
         pot: data.pot || 0,
         street: data.street || 'preflop',
         currentSeat: data.currentSeat || 0,
-        dealerIdx: 0,
-        sbIdx: 1,
-        bbIdx: 2,
+        dealerIdx: data.dealerIdx ?? 0,
+        sbIdx: data.sbIdx ?? 1,
+        bbIdx: data.bbIdx ?? 2,
         roomCode: data.roomCode,
-        escrowAddr: data.escrowAddr || null,  // shared pot wallet — players send here on call/raise
+        escrowAddr: data.escrowAddr || null,
         isHost: false,
         myAddr: state.account?.address,
         structure: 'texas-holdem',
         demo: !!DEMO_MODE,
-        currentBet: POKER_BB,
-        lastRaiser: null,
+        currentBet: data.currentBet ?? POKER_BB,
+        lastRaiser: data.lastRaiser ?? null,
       };
+      if (data.escrowAddr) state.bet.escrowAddr = data.escrowAddr;
+      if (data.roomCode) state.bet.roomCode = data.roomCode;
+      state.bet.structure = 'texas-holdem';
+      state.bet.active = true;
+      state.bet.isHost = false;
+      // Non-host posts blinds they owe into the shared escrow (host already posted theirs)
+      try {
+        const myLc = (state.account?.address || '').toLowerCase();
+        const escrow = data.escrowAddr;
+        const seats = data.seats || [];
+        let blindDue = 0;
+        seats.forEach((s, i) => {
+          if (s.addr && s.addr.toLowerCase() === myLc && s.bet > 0) {
+            if (i === data.sbIdx || i === data.bbIdx) blindDue += s.bet;
+          }
+        });
+        if (blindDue > 0 && escrow) {
+          if (DEMO_MODE) {
+            state.total = Math.max(0, (state.total || 0) - blindDue);
+            state.pathUSD = state.total;
+            try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
+            renderWalletUI();
+          } else {
+            sendEscrowDeposit(escrow, blindDue).catch(e => console.error('poker blind deposit failed', e));
+          }
+        }
+      } catch (e) { console.warn('poker blind sync failed', e); }
       showScreen('poker-table');
+    } else if (state.poker.isHost) {
+      // Host already applied via local publish — ignore echo
+      if (!opts.local) return;
     }
     renderPokerTable();
     return;
@@ -4878,11 +5237,16 @@ function _handlePokerMessage(data, opts) {
   if (!p) return;
 
   if (data.event === 'poker_turn') {
+    if (opts.local && p.isHost) {
+      // Already at this seat locally
+      renderPokerTable();
+      return;
+    }
+    if (!opts.local && p.isHost) return; // echo of our own turn publish
     p.currentSeat = data.seatIdx;
     p.currentBet = data.currentBet;
     p.pot = data.pot;
     renderPokerTable();
-    // Haptic if this is me
     if (data.addr && p.myAddr && data.addr.toLowerCase() === p.myAddr.toLowerCase()) {
       pokerHaptic();
       const actionArea = document.getElementById('poker-action-area');
@@ -4895,31 +5259,48 @@ function _handlePokerMessage(data, opts) {
   }
 
   if (data.event === 'poker_action') {
-    // Apply to state (both host and non-host process it; host drives turn advance)
-    if (!opts.local || p.isHost) {
+    const key = _pokerActionKey(data);
+    if (_pokerSeenActionKeys.has(key)) return;
+    // Local apply for the actor (and host if they are the actor / always for host-driven)
+    if (opts.local) {
+      _pokerSeenActionKeys.add(key);
       _applyAction(data);
+      return;
     }
+    // Remote: skip echo of our own action (already applied locally)
+    if (data.addr && p.myAddr && data.addr.toLowerCase() === p.myAddr.toLowerCase()) return;
+    _pokerSeenActionKeys.add(key);
+    _applyAction(data);
     return;
   }
 
   if (data.event === 'poker_street') {
+    if (!opts.local && p.isHost) return; // echo
     p.street = data.street;
     p.pot = data.pot;
     if (data.seats) p.seats = data.seats;
+    if (data.currentBet != null) p.currentBet = data.currentBet;
+    else p.currentBet = 0;
+    if (data.currentSeat != null) p.currentSeat = data.currentSeat;
+    if ('lastRaiser' in data) p.lastRaiser = data.lastRaiser;
+    if (data.dealerIdx != null) p.dealerIdx = data.dealerIdx;
+    if (data.sbIdx != null) p.sbIdx = data.sbIdx;
+    if (data.bbIdx != null) p.bbIdx = data.bbIdx;
     renderPokerTable();
     return;
   }
 
   if (data.event === 'poker_settle') {
-    p.street = 'settled';
-    // Credit receiver if demo and it's me
-    if (DEMO_MODE && data.winnerAddr && p.myAddr && data.winnerAddr.toLowerCase() === p.myAddr.toLowerCase() && !p.isHost) {
-      state.total = (state.total || 0) + (data.pot || 0);
-      state.pathUSD = state.total;
-      try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
-      renderWalletUI();
+    if (!opts.local && p.isHost) {
+      // Host already handled payout locally
+      p.street = 'settled';
+      renderPokerTable();
+      return;
     }
+    p.street = 'settled';
+    // Money for remote winners arrives via demo_credit / on-chain escrow — don't double-credit here
     showTxFlash('🏆', '$' + (data.pot || 0), (data.winnerName || 'Winner') + ' wins!');
+    moneyRain(6);
     renderPokerTable();
     return;
   }
@@ -4930,4 +5311,9 @@ function leavePokerRoom() {
   _pokerMqttClient = null;
   state.poker = null;
   _pokerSelectedWinnerAddr = null;
+  _pokerSeenActionKeys = new Set();
+  if (state.bet?.structure === 'texas-holdem') {
+    state.bet.active = false;
+    try { localStorage.removeItem('throw_active_bet'); } catch(_) {}
+  }
 }
