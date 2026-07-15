@@ -4196,6 +4196,7 @@ body:has(.demo-banner:not(.hidden)) .screen {
 .poker-street-badge.street-river    { background: #e74c3c; box-shadow: 0 0 16px rgba(231,76,60,0.55); }
 .poker-street-badge.street-showdown { background: #9b59b6; box-shadow: 0 0 16px rgba(155,89,182,0.55); }
 .poker-street-badge.street-settled  { background: #555; box-shadow: none; }
+.poker-street-badge.street-waiting  { background: #666; box-shadow: 0 0 12px rgba(255,255,255,0.2); }
 
 .poker-action-panel {
   margin: 14px auto 8px;
