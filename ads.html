@@ -3,272 +3,358 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>THROW — Sponsor Dashboard</title>
+  <title>THROW — Ad Inventory</title>
   <meta name="coinzilla" content="83ee5bbfa0f3687d9c1df6d7e6209b51" />
   <link rel="icon" href="icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="mqtt.min.js"></script>
   <style>
     :root {
-      --bg:      #0A0A0F;
-      --surface: #111118;
-      --card:    #16161F;
-      --border:  #252530;
-      --accent:  #7C3AED;
-      --accent2: #A78BFA;
-      --green:   #22C55E;
-      --red:     #EF4444;
-      --yellow:  #F59E0B;
-      --text:    #F1F5F9;
-      --text2:   #94A3B8;
-      --text3:   #4B5563;
-      --r:       10px;
-      --font:    'Inter', system-ui, sans-serif;
+      --bg: #07080a;
+      --surface: #0e1114;
+      --card: #14191e;
+      --border: rgba(255,255,255,0.08);
+      --accent: #00e5a0;
+      --accent-dim: rgba(0,229,160,0.15);
+      --gold: #f5c542;
+      --text: #f4f6f8;
+      --text2: rgba(244,246,248,0.6);
+      --text3: rgba(244,246,248,0.32);
+      --red: #ff5c5c;
+      --green: #00e5a0;
+      --r: 12px;
+      --font: 'Space Grotesk', system-ui, sans-serif;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { -webkit-font-smoothing: antialiased; }
-    body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; }
-
-    /* NAV */
-    .nav {
-      height: 52px; display: flex; align-items: center;
-      justify-content: space-between; padding: 0 24px;
-      background: var(--surface); border-bottom: 1px solid var(--border);
-      position: sticky; top: 0; z-index: 100;
-    }
-    .nav-left { display: flex; align-items: center; gap: 12px; }
-    .nav-logo { font-size: 15px; font-weight: 700; color: var(--text); text-decoration: none; }
-    .nav-logo span { color: var(--accent2); }
-    .mqtt-dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: var(--text3); transition: background .3s;
-    }
-    .mqtt-dot.connected  { background: var(--green); }
-    .mqtt-dot.error      { background: var(--red); }
-
-    /* PAGE */
-    .page { max-width: 860px; margin: 0 auto; padding: 32px 24px; }
-
-    /* LIVE PREVIEW */
-    .live-preview {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--r); padding: 20px; margin-bottom: 24px;
-    }
-    .preview-header {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 16px;
-    }
-    .preview-title { font-size: 13px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .06em; }
-    .live-badge {
-      font-size: 11px; font-weight: 700; color: var(--green);
-      background: #14532D; padding: 2px 8px; border-radius: 20px;
-      display: flex; align-items: center; gap: 5px;
-    }
-    .live-badge::before {
-      content: ''; width: 6px; height: 6px; border-radius: 50%;
-      background: var(--green); animation: pulse 1.5s infinite;
-    }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
-
-    .strip-preview {
-      display: flex; gap: 8px; align-items: center;
-      overflow-x: auto; padding: 4px 0;
-    }
-    .strip-tile {
-      flex-shrink: 0; width: 64px; height: 64px; border-radius: 8px;
-      border: 1px solid var(--border); background: var(--card);
-      display: flex; flex-direction: column; align-items: center;
-      justify-content: center; gap: 4px; overflow: hidden;
-    }
-    .strip-tile img { width: 40px; height: 40px; object-fit: contain; border-radius: 4px; }
-    .strip-tile-name { font-size: 9px; color: var(--text2); text-align: center; overflow: hidden; white-space: nowrap; max-width: 58px; text-overflow: ellipsis; }
-    .strip-tile.house { opacity: .35; }
-    .strip-empty { font-size: 13px; color: var(--text3); padding: 8px 0; }
-
-    /* SPONSORS GRID */
-    .sponsors-grid {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-      gap: 12px; margin-bottom: 24px;
-    }
-    .sponsor-card {
-      background: var(--surface); border: 2px solid var(--border);
-      border-radius: var(--r); padding: 16px; cursor: pointer;
-      transition: border-color .15s; position: relative;
-    }
-    .sponsor-card:hover { border-color: var(--accent2); }
-    .sponsor-card.active { border-color: var(--green); }
-    .sponsor-card.active::after {
-      content: 'LIVE'; position: absolute; top: 10px; right: 10px;
-      font-size: 10px; font-weight: 700; color: var(--green);
-      background: #14532D; padding: 2px 6px; border-radius: 20px;
-    }
-    .card-logo {
-      width: 52px; height: 52px; border-radius: 8px; object-fit: contain;
-      background: var(--card); border: 1px solid var(--border);
-      margin-bottom: 10px;
-    }
-    .card-logo-placeholder {
-      width: 52px; height: 52px; border-radius: 8px;
-      background: var(--card); border: 1px solid var(--border);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 22px; margin-bottom: 10px;
-    }
-    .card-name    { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
-    .card-tagline { font-size: 12px; color: var(--text2); margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .card-url     { font-size: 11px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .card-actions { display: flex; gap: 6px; margin-top: 12px; }
-
-    /* SECTION */
-    .section-header {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 14px;
-    }
-    .section-title { font-size: 14px; font-weight: 600; }
-
-    /* BUTTONS */
-    .btn {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 7px 14px; border-radius: 8px; font-size: 13px;
-      font-weight: 600; cursor: pointer; border: none; transition: opacity .15s;
+    body {
       font-family: var(--font);
+      background:
+        radial-gradient(ellipse 80% 50% at 10% -10%, rgba(0,229,160,0.12), transparent 50%),
+        radial-gradient(ellipse 60% 40% at 100% 0%, rgba(245,197,66,0.06), transparent 45%),
+        var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
     }
-    .btn:hover   { opacity: .85; }
-    .btn:disabled{ opacity: .4; cursor: not-allowed; }
-    .btn-primary { background: var(--accent); color: #fff; }
-    .btn-green   { background: #166534; color: #86EFAC; border: 1px solid #166534; }
-    .btn-ghost   { background: var(--card); color: var(--text); border: 1px solid var(--border); }
-    .btn-danger  { background: #7F1D1D; color: #FCA5A5; border: 1px solid #991B1B; }
-    .btn-sm      { padding: 5px 10px; font-size: 12px; }
+    .nav {
+      height: 56px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 22px; border-bottom: 1px solid var(--border);
+      background: rgba(7,8,10,0.85); backdrop-filter: blur(12px);
+      position: sticky; top: 0; z-index: 50;
+    }
+    .nav-brand { font-weight: 700; letter-spacing: 0.14em; font-size: 14px; text-decoration: none; color: var(--text); }
+    .nav-brand span { color: var(--accent); letter-spacing: 0.04em; font-weight: 500; margin-left: 8px; opacity: 0.85; }
+    .mqtt-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text3); }
+    .mqtt-dot.on { background: var(--green); box-shadow: 0 0 10px var(--accent); }
+    .mqtt-dot.err { background: var(--red); }
+    .nav-right { display: flex; align-items: center; gap: 12px; }
 
-    /* PUSH CONTROLS */
-    .push-bar {
+    .page { max-width: 980px; margin: 0 auto; padding: 28px 20px 80px; }
+    .hero {
+      margin-bottom: 28px;
+    }
+    .hero h1 {
+      font-size: clamp(1.6rem, 4vw, 2.2rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+    }
+    .hero p { color: var(--text2); margin-top: 8px; max-width: 540px; line-height: 1.5; font-size: 15px; }
+
+    .tabs { display: flex; gap: 6px; margin-bottom: 22px; flex-wrap: wrap; }
+    .tab {
+      padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border);
+      background: transparent; color: var(--text2); font: 600 13px var(--font); cursor: pointer;
+    }
+    .tab.active { background: var(--accent-dim); color: var(--accent); border-color: rgba(0,229,160,0.35); }
+
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    .grid-2 { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 16px; }
+    @media (max-width: 800px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    .card {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--r); padding: 16px 20px; margin-bottom: 24px;
-      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      border-radius: var(--r); padding: 18px;
     }
-    .push-bar-label { font-size: 13px; color: var(--text2); flex: 0 0 auto; }
-    .push-bar-status { font-size: 12px; color: var(--text3); flex: 1; min-width: 120px; }
+    .card h2 { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text2); margin-bottom: 14px; }
+    .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+    .stat {
+      background: var(--card); border-radius: 10px; padding: 12px;
+      border: 1px solid var(--border);
+    }
+    .stat .n { font-size: 22px; font-weight: 700; color: var(--accent); }
+    .stat .l { font-size: 11px; color: var(--text3); margin-top: 2px; letter-spacing: 0.06em; text-transform: uppercase; }
 
-    /* MODAL */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 9px 14px; border-radius: 10px; border: none;
+      font: 600 13px var(--font); cursor: pointer; transition: opacity .15s;
+    }
+    .btn:hover { opacity: 0.88; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #04140f; }
+    .btn-ghost { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+    .btn-danger { background: rgba(255,92,92,0.12); color: #ffb4b4; border: 1px solid rgba(255,92,92,0.3); }
+    .btn-sm { padding: 6px 10px; font-size: 12px; }
+
+    .zone-list, .ad-list { display: flex; flex-direction: column; gap: 10px; }
+    .zone-item, .ad-item {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px; display: flex; gap: 12px; align-items: flex-start;
+    }
+    .zone-item.active, .ad-item.live { border-color: rgba(0,229,160,0.45); }
+    .zone-meta { flex: 1; min-width: 0; }
+    .zone-title { font-weight: 700; font-size: 15px; }
+    .zone-sub { font-size: 12px; color: var(--text2); margin-top: 3px; }
+    .pill {
+      display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase; padding: 2px 7px; border-radius: 999px;
+      background: var(--accent-dim); color: var(--accent); margin-left: 6px;
+    }
+    .pill.gold { background: rgba(245,197,66,0.15); color: var(--gold); }
+    .pill.muted { background: rgba(255,255,255,0.06); color: var(--text3); }
+
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 4px; font-weight: 500; }
+    .field input, .field select, .field textarea {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 12px; color: var(--text);
+      font: 400 13px var(--font); outline: none;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus { border-color: rgba(0,229,160,0.5); }
+    .field-hint { font-size: 11px; color: var(--text3); margin-top: 4px; line-height: 1.4; }
+    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
     .overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,.75);
+      position: fixed; inset: 0; background: rgba(0,0,0,0.72);
       display: none; align-items: center; justify-content: center;
-      z-index: 200; padding: 20px;
+      z-index: 100; padding: 16px;
     }
     .overlay.open { display: flex; }
     .modal {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: 14px; width: 100%; max-width: 440px; padding: 26px;
+      border-radius: 14px; width: 100%; max-width: 480px; padding: 22px;
+      max-height: 90vh; overflow-y: auto;
     }
-    .modal h2 { font-size: 16px; font-weight: 700; margin-bottom: 18px; }
-    .field { margin-bottom: 13px; }
-    .field label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 4px; font-weight: 500; }
-    .field input {
-      width: 100%; background: var(--card); border: 1px solid var(--border);
-      border-radius: 8px; padding: 9px 12px; color: var(--text);
-      font-size: 13px; outline: none; font-family: var(--font);
-    }
-    .field input:focus { border-color: var(--accent2); }
-    .field-hint { font-size: 11px; color: var(--text3); margin-top: 3px; }
-    .logo-preview-wrap { margin-top: 8px; }
-    .logo-preview {
-      width: 52px; height: 52px; border-radius: 8px; object-fit: contain;
-      background: var(--card); border: 1px solid var(--border); display: none;
-    }
-    .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+    .modal h3 { font-size: 17px; margin-bottom: 14px; }
+    .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
-    /* TOAST */
     .toast {
-      position: fixed; bottom: 20px; right: 20px;
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 10px; padding: 11px 16px; font-size: 13px;
-      z-index: 999; transform: translateY(60px); opacity: 0;
-      transition: all .2s; max-width: 300px;
+      position: fixed; bottom: 20px; right: 20px; background: var(--card);
+      border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px;
+      font-size: 13px; z-index: 200; transform: translateY(40px); opacity: 0;
+      transition: .2s; max-width: 320px;
     }
-    .toast.show  { transform: translateY(0); opacity: 1; }
-    .toast.ok    { border-color: var(--green); }
-    .toast.err   { border-color: var(--red); }
+    .toast.show { transform: none; opacity: 1; }
+    .toast.ok { border-color: rgba(0,229,160,0.5); }
+    .toast.err { border-color: rgba(255,92,92,0.5); }
 
-    @media(max-width:600px){
-      .sponsors-grid { grid-template-columns: 1fr; }
-      .push-bar { flex-direction: column; align-items: flex-start; }
+    .network-box {
+      border: 1px dashed rgba(245,197,66,0.35);
+      background: rgba(245,197,66,0.05);
+      border-radius: 12px; padding: 16px; margin-top: 12px;
     }
+    .network-box h3 { font-size: 14px; color: var(--gold); margin-bottom: 6px; }
+    .log {
+      font-family: ui-monospace, monospace; font-size: 11px; color: var(--text3);
+      max-height: 220px; overflow-y: auto; background: var(--bg);
+      border-radius: 8px; padding: 10px; border: 1px solid var(--border);
+    }
+    .log div { padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
   </style>
 </head>
 <body>
-
 <nav class="nav">
-  <div class="nav-left">
-    <a class="nav-logo" href="/">THROW <span>/ Sponsors</span></a>
-    <div class="mqtt-dot" id="mqtt-dot" title="MQTT status"></div>
+  <a class="nav-brand" href="/">THROW <span>Ads</span></a>
+  <div class="nav-right">
+    <div class="mqtt-dot" id="mqtt-dot" title="Live push link"></div>
+    <button class="btn btn-ghost btn-sm" onclick="pushAll()">Push live</button>
   </div>
-  <button class="btn btn-ghost btn-sm" onclick="clearAll()">Clear strips</button>
 </nav>
 
 <div class="page">
+  <div class="hero">
+    <h1>Sell the room.<br/>Fill unsold with clicks.</h1>
+    <p>Price ad space by venue or city. Direct sponsors win nearby. Empty slots fill from Coinzilla — the click network already verified on THROW.</p>
+  </div>
 
-  <!-- LIVE STRIP PREVIEW -->
-  <div class="live-preview">
-    <div class="preview-header">
-      <span class="preview-title">Live in strips right now</span>
-      <span class="live-badge" id="live-badge">Connecting…</span>
+  <div class="tabs">
+    <button class="tab active" data-tab="inventory">Inventory</button>
+    <button class="tab" data-tab="network">Network fill</button>
+    <button class="tab" data-tab="analytics">Clicks</button>
+  </div>
+
+  <!-- INVENTORY -->
+  <div class="panel active" id="panel-inventory">
+    <div class="grid-2">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <h2 style="margin:0">Location zones</h2>
+          <button class="btn btn-primary btn-sm" onclick="openZoneModal()">+ Zone</button>
+        </div>
+        <div class="zone-list" id="zone-list"></div>
+      </div>
+      <div class="card">
+        <h2>How it sells</h2>
+        <div class="stat-row">
+          <div class="stat"><div class="n" id="stat-zones">0</div><div class="l">Zones</div></div>
+          <div class="stat"><div class="n" id="stat-ads">0</div><div class="l">Sold ads</div></div>
+          <div class="stat"><div class="n" id="stat-cpc">$0</div><div class="l">Avg CPC</div></div>
+        </div>
+        <p style="font-size:13px;color:var(--text2);line-height:1.55">
+          <strong style="color:var(--text)">Priority:</strong> venue pin → city/geo radius → global direct → Coinzilla fill.<br/><br/>
+          Phones near a zone see that sponsor on splash, orb, and strips. Tap goes through THROW click tracking, then to the buyer’s URL.
+        </p>
+        <button class="btn btn-ghost" style="margin-top:14px;width:100%" onclick="openAdModal()">+ Sell a slot</button>
+      </div>
     </div>
-    <div class="strip-preview" id="strip-preview">
-      <span class="strip-empty">No sponsors loaded yet</span>
+
+    <div class="card" style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h2 style="margin:0">Sold placements</h2>
+        <button class="btn btn-primary btn-sm" onclick="pushAll()">Push to phones</button>
+      </div>
+      <div class="ad-list" id="ad-list"></div>
     </div>
   </div>
 
-  <!-- PUSH BAR -->
-  <div class="push-bar">
-    <span class="push-bar-label">Push to strips:</span>
-    <button class="btn btn-green" id="push-btn" onclick="pushLive()" disabled>
-      ▶ Push Live
-    </button>
-    <span class="push-bar-status" id="push-status">Select sponsors below then push</span>
+  <!-- NETWORK -->
+  <div class="panel" id="panel-network">
+    <div class="card">
+      <h2>Coinzilla — click network fill</h2>
+      <p style="font-size:14px;color:var(--text2);line-height:1.55;margin-bottom:14px">
+        When a location has no direct sponsor, THROW shows Coinzilla inventory (CPM/CPC crypto &amp; finance ads).
+        Your site is already verified (<code style="color:var(--accent)">coinzilla</code> meta). Paste the zone ID from your Coinzilla publisher dashboard.
+      </p>
+      <div class="field">
+        <label>Coinzilla zone ID</label>
+        <input id="cfg-zone" placeholder="e.g. 1234567abcdef" />
+        <div class="field-hint">From Coinzilla → Publisher → Zones. Also set env <code>COINZILLA_ZONE_ID</code> on Vercel for the API.</div>
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label>Fill when empty</label>
+          <select id="cfg-fill">
+            <option value="true">Yes — network fills unsold slots</option>
+            <option value="false">No — house brands only</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Strip position</label>
+          <select id="cfg-slot">
+            <option value="strips">Wallet / throw strips</option>
+            <option value="splash">Splash + strips</option>
+          </select>
+        </div>
+      </div>
+      <div class="network-box">
+        <h3>Money path</h3>
+        <p style="font-size:13px;color:var(--text2);line-height:1.5">
+          Direct sales → you invoice the local business (CPC or flat). Network fill → Coinzilla pays you for impressions/clicks on unsold inventory. Same screens, two revenue lines.
+        </p>
+      </div>
+      <div class="modal-footer" style="justify-content:flex-start">
+        <button class="btn btn-primary" onclick="saveNetworkCfg()">Save network settings</button>
+        <a class="btn btn-ghost" href="https://coinzilla.com/publishers/" target="_blank" rel="noopener">Open Coinzilla →</a>
+      </div>
+    </div>
   </div>
 
-  <!-- SPONSORS -->
-  <div class="section-header">
-    <span class="section-title">Sponsors</span>
-    <button class="btn btn-primary" onclick="openModal()">+ Add Sponsor</button>
+  <!-- ANALYTICS -->
+  <div class="panel" id="panel-analytics">
+    <div class="card">
+      <h2>Live click / impression feed</h2>
+      <div class="stat-row">
+        <div class="stat"><div class="n" id="stat-imps">0</div><div class="l">Impressions</div></div>
+        <div class="stat"><div class="n" id="stat-clicks">0</div><div class="l">Clicks</div></div>
+        <div class="stat"><div class="n" id="stat-ctr">0%</div><div class="l">CTR</div></div>
+      </div>
+      <div class="log" id="event-log"><div>Waiting for phone events…</div></div>
+    </div>
   </div>
+</div>
 
-  <div class="sponsors-grid" id="sponsors-grid">
-    <div style="color:var(--text3);font-size:13px;padding:8px 0">Loading…</div>
-  </div>
-
-</div><!-- .page -->
-
-<!-- MODAL -->
-<div class="overlay" id="overlay" onclick="closeOnOverlay(event)">
+<!-- ZONE MODAL -->
+<div class="overlay" id="zone-overlay" onclick="if(event.target===this)closeZoneModal()">
   <div class="modal">
-    <h2 id="modal-title">Add Sponsor</h2>
-    <input type="hidden" id="edit-id" />
+    <h3 id="zone-modal-title">New location zone</h3>
+    <input type="hidden" id="zone-edit-id" />
+    <div class="field">
+      <label>Zone name</label>
+      <input id="z-name" placeholder="South Beach clubs" />
+    </div>
+    <div class="field">
+      <label>Type</label>
+      <select id="z-type" onchange="onZoneTypeChange()">
+        <option value="venue">Venue pin (tight radius)</option>
+        <option value="geo">Geo radius (neighborhood / city)</option>
+        <option value="global">Global (everywhere)</option>
+      </select>
+    </div>
+    <div id="z-geo-fields">
+      <div class="row-2">
+        <div class="field"><label>Latitude</label><input id="z-lat" type="number" step="any" placeholder="25.7907" /></div>
+        <div class="field"><label>Longitude</label><input id="z-lng" type="number" step="any" placeholder="-80.1300" /></div>
+      </div>
+      <div class="field">
+        <label>Radius (miles)</label>
+        <input id="z-radius" type="number" step="0.05" value="0.25" />
+        <div class="field-hint">Venue default 0.25 mi · city/geo often 5–25 mi</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="useMyLocation()">Use my location</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeZoneModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveZone()">Save zone</button>
+    </div>
+  </div>
+</div>
 
+<!-- AD MODAL -->
+<div class="overlay" id="ad-overlay" onclick="if(event.target===this)closeAdModal()">
+  <div class="modal">
+    <h3 id="ad-modal-title">Sell a slot</h3>
+    <input type="hidden" id="ad-edit-id" />
+    <div class="field">
+      <label>Zone</label>
+      <select id="a-zone"></select>
+    </div>
     <div class="field">
       <label>Business name</label>
-      <input id="f-name" placeholder="e.g. Aqua Grill, McFlamingo" />
+      <input id="a-name" placeholder="LIV Miami" />
     </div>
     <div class="field">
       <label>Tagline</label>
-      <input id="f-tagline" placeholder="e.g. Fresh seafood on the water" maxlength="60" />
+      <input id="a-tagline" maxlength="60" placeholder="Make it rain tonight" />
     </div>
     <div class="field">
       <label>Logo URL</label>
-      <input id="f-logo" placeholder="https://…" oninput="previewLogo(this.value)" />
-      <div class="field-hint">Direct image URL — shown in strips and splash screen</div>
-      <div class="logo-preview-wrap">
-        <img class="logo-preview" id="logo-preview" alt="logo preview" />
-      </div>
+      <input id="a-logo" placeholder="https://…" />
     </div>
     <div class="field">
-      <label>Click URL <span style="color:var(--text3)">(optional)</span></label>
-      <input id="f-url" placeholder="https://…" />
-      <div class="field-hint">Opens when user taps the strip tile</div>
+      <label>Click URL (where taps go)</label>
+      <input id="a-url" placeholder="https://…" />
+      <div class="field-hint">Tracked via /api/ads/click then redirected here</div>
     </div>
-
+    <div class="row-2">
+      <div class="field">
+        <label>Sold CPC ($)</label>
+        <input id="a-cpc" type="number" step="0.01" value="0.50" />
+      </div>
+      <div class="field">
+        <label>Status</label>
+        <select id="a-status">
+          <option value="active">Active</option>
+          <option value="paused">Paused</option>
+        </select>
+      </div>
+    </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" id="modal-save" onclick="saveSponsor()">Save</button>
+      <button class="btn btn-ghost" onclick="closeAdModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveAd()">Save placement</button>
     </div>
   </div>
 </div>
@@ -276,280 +362,362 @@
 <div class="toast" id="toast"></div>
 
 <script>
-  const MQTT_BROKER  = 'wss://broker.emqx.io:8084/mqtt';
-  const TOPIC        = 'throw/sponsor';
-  const STORAGE_KEY  = 'throw_ad_sponsors';
+const MQTT_BROKER = 'wss://broker.emqx.io:8084/mqtt';
+const TOPIC_INV   = 'throw/ads/inventory';
+const TOPIC_SPON  = 'throw/sponsor';
+const TOPIC_VENUE = 'throw/venues';
+const TOPIC_ANAL  = 'throw/ads/analytics';
+const STORE_KEY   = 'throw_ad_inventory_v2';
+const CFG_KEY     = 'throw_ad_network_cfg';
+const STATS_KEY   = 'throw_ad_stats_v1';
 
-  // HOUSE fallbacks shown when no paid sponsors
-  const HOUSE = [
-    { name: 'THROW', text: '💸' },
-    { name: '$$$',   text: '$' },
-    { name: 'TEMPO', text: 'T' },
-  ];
+let state = { zones: [], network: { zoneId: '', fillWhenEmpty: true, slot: 'strips' } };
+let stats = { impressions: 0, clicks: 0, events: [] };
+let mqttClient = null;
 
-  let sponsors  = [];   // all saved sponsors
-  let selected  = new Set(); // ids selected to be live
-  let liveState = null; // last known retained payload from broker
-  let mqttClient = null;
+function uid() { return Math.random().toString(36).slice(2, 10); }
+function toast(msg, kind) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + (kind || '');
+  setTimeout(() => el.classList.remove('show'), 2800);
+}
+function esc(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
-  // ── PERSISTENCE ────────────────────────────────────────────────────────────
-  function load() {
-    try { sponsors = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch(_) { sponsors = []; }
-  }
-  function save() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sponsors));
-  }
+function load() {
+  try { state = JSON.parse(localStorage.getItem(STORE_KEY) || 'null') || state; } catch(_) {}
+  try {
+    const cfg = JSON.parse(localStorage.getItem(CFG_KEY) || 'null');
+    if (cfg) state.network = { ...state.network, ...cfg };
+  } catch(_) {}
+  try { stats = JSON.parse(localStorage.getItem(STATS_KEY) || 'null') || stats; } catch(_) {}
+  if (!Array.isArray(state.zones)) state.zones = [];
+}
+function persist() {
+  localStorage.setItem(STORE_KEY, JSON.stringify({ zones: state.zones }));
+  localStorage.setItem(CFG_KEY, JSON.stringify(state.network));
+  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+}
 
-  // ── MQTT ───────────────────────────────────────────────────────────────────
-  function connectMQTT() {
-    const dot = document.getElementById('mqtt-dot');
-    const badge = document.getElementById('live-badge');
+function connectMQTT() {
+  const dot = document.getElementById('mqtt-dot');
+  mqttClient = mqtt.connect(MQTT_BROKER, {
+    clientId: 'throw_ads_' + Math.random().toString(36).slice(2, 8),
+    clean: true, connectTimeout: 8000, reconnectPeriod: 4000,
+  });
+  mqttClient.on('connect', () => {
+    dot.className = 'mqtt-dot on';
+    mqttClient.subscribe(TOPIC_ANAL, { qos: 0 });
+  });
+  mqttClient.on('error', () => { dot.className = 'mqtt-dot err'; });
+  mqttClient.on('offline', () => { dot.className = 'mqtt-dot'; });
+  mqttClient.on('message', (topic, buf) => {
+    if (topic !== TOPIC_ANAL) return;
     try {
-      mqttClient = mqtt.connect(MQTT_BROKER, {
-        clientId: 'throw_ads_' + Math.random().toString(36).slice(2,8),
-        clean: true, connectTimeout: 8000, reconnectPeriod: 5000,
-      });
+      const data = JSON.parse(buf.toString());
+      onAnalyticsEvent(data);
+    } catch(_) {}
+  });
+}
 
-      mqttClient.on('connect', () => {
-        dot.className = 'mqtt-dot connected';
-        badge.textContent = 'Connected';
-        // Subscribe to read current retained state
-        mqttClient.subscribe(TOPIC, { qos: 1 });
-      });
+function onAnalyticsEvent(data) {
+  if (data.event === 'impression') stats.impressions++;
+  if (data.event === 'click') stats.clicks++;
+  stats.events = [{ t: Date.now(), ...data }, ...(stats.events || [])].slice(0, 80);
+  persist();
+  renderAnalytics();
+}
 
-      mqttClient.on('message', (_t, msg) => {
-        try {
-          const data = JSON.parse(msg.toString());
-          liveState = data;
-          renderLivePreview(data);
-          // Mark which cards are currently live
-          const liveNames = (data.sponsors || (data.sponsor ? [data.sponsor] : [])).map(s => s.name);
-          selected = new Set(sponsors.filter(s => liveNames.includes(s.name)).map(s => s.id));
-          renderGrid();
-          updatePushBtn();
-        } catch(_) {}
-      });
-
-      mqttClient.on('error', () => { dot.className = 'mqtt-dot error'; });
-      mqttClient.on('offline', () => { dot.className = 'mqtt-dot'; badge.textContent = 'Offline'; });
-    } catch(e) {
-      dot.className = 'mqtt-dot error';
-    }
+function allAds() {
+  const out = [];
+  for (const z of state.zones) {
+    for (const a of (z.ads || [])) out.push({ ...a, zone: z });
   }
+  return out;
+}
 
-  function publish(payload) {
-    return new Promise((resolve, reject) => {
-      if (!mqttClient?.connected) { reject(new Error('MQTT not connected')); return; }
-      mqttClient.publish(TOPIC, JSON.stringify(payload), { qos: 1, retain: true }, (err) => {
-        if (err) reject(err); else resolve();
-      });
-    });
-  }
-
-  // ── PUSH LIVE ───────────────────────────────────────────────────────────────
-  async function pushLive() {
-    const btn = document.getElementById('push-btn');
-    const status = document.getElementById('push-status');
-    const active = sponsors.filter(s => selected.has(s.id));
-
-    if (!active.length) { toast('Select at least one sponsor', 'err'); return; }
-
-    btn.disabled = true;
-    btn.textContent = 'Pushing…';
-
-    const payload = {
-      sponsor:  active[0],     // primary (splash + orb)
-      sponsors: active,        // all (strips rotation)
-      pushedAt: new Date().toISOString(),
-    };
-
-    try {
-      await publish(payload);
-      status.textContent = `✓ ${active.map(s => s.name).join(', ')} live in strips`;
-      status.style.color = 'var(--green)';
-      renderLivePreview(payload);
-      renderGrid();
-      toast('Pushed live — strips updating now', 'ok');
-    } catch(e) {
-      toast('Push failed: ' + e.message, 'err');
-      status.textContent = 'Push failed — check MQTT connection';
-      status.style.color = 'var(--red)';
-    } finally {
-      btn.disabled = false;
-      btn.textContent = '▶ Push Live';
-    }
-  }
-
-  async function clearAll() {
-    if (!confirm('Clear all sponsors from strips? House brands will show instead.')) return;
-    try {
-      await publish({ sponsor: null, sponsors: [], clearedAt: new Date().toISOString() });
-      selected.clear();
-      renderLivePreview({ sponsors: [] });
-      renderGrid();
-      updatePushBtn();
-      toast('Strips cleared — house brands now showing', 'ok');
-    } catch(e) {
-      toast('Clear failed: ' + e.message, 'err');
-    }
-  }
-
-  // ── RENDER ─────────────────────────────────────────────────────────────────
-  function renderLivePreview(data) {
-    const wrap = document.getElementById('strip-preview');
-    const badge = document.getElementById('live-badge');
-    const active = data?.sponsors || (data?.sponsor ? [data.sponsor] : []);
-
-    if (!active.length) {
-      wrap.innerHTML = `<span class="strip-empty">No paid sponsors — house brands showing</span>`;
-      badge.textContent = 'House';
-      badge.style.color = 'var(--yellow)';
-      badge.style.background = '#451A03';
-      return;
-    }
-
-    badge.textContent = 'Live';
-    badge.style.color = 'var(--green)';
-    badge.style.background = '#14532D';
-
-    wrap.innerHTML = active.map(sp => `
-      <div class="strip-tile" title="${escHtml(sp.name)}">
-        ${sp.logoUrl
-          ? `<img src="${escHtml(sp.logoUrl)}" alt="${escHtml(sp.name)}" onerror="this.style.display='none'" />`
-          : `<span style="font-size:20px">📣</span>`}
-        <div class="strip-tile-name">${escHtml(sp.name)}</div>
-      </div>
-    `).join('') + HOUSE.map(h => `
-      <div class="strip-tile house" title="${h.name}">
-        <span style="font-size:20px">${h.text}</span>
-        <div class="strip-tile-name">${h.name}</div>
-      </div>
-    `).join('');
-  }
-
-  function renderGrid() {
-    const grid = document.getElementById('sponsors-grid');
-    if (!sponsors.length) {
-      grid.innerHTML = `<div style="color:var(--text3);font-size:13px;padding:8px 0;grid-column:1/-1">No sponsors yet — add one above.</div>`;
-      return;
-    }
-    grid.innerHTML = sponsors.map(sp => {
-      const isActive = selected.has(sp.id);
-      const logo = sp.logoUrl
-        ? `<img class="card-logo" src="${escHtml(sp.logoUrl)}" alt="${escHtml(sp.name)}" onerror="this.style.display='none'" />`
-        : `<div class="card-logo-placeholder">📣</div>`;
-      return `
-        <div class="sponsor-card ${isActive ? 'active' : ''}" onclick="toggleSelect('${sp.id}')">
-          ${logo}
-          <div class="card-name">${escHtml(sp.name)}</div>
-          <div class="card-tagline">${escHtml(sp.tagline || '')}</div>
-          <div class="card-url">${escHtml(sp.url || '')}</div>
-          <div class="card-actions" onclick="event.stopPropagation()">
-            <button class="btn btn-ghost btn-sm" onclick="openModal('${sp.id}')">Edit</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteSponsor('${sp.id}')">Remove</button>
+function render() {
+  const list = document.getElementById('zone-list');
+  if (!state.zones.length) {
+    list.innerHTML = '<div style="color:var(--text3);font-size:13px">No zones yet — add a venue or city radius to sell.</div>';
+  } else {
+    list.innerHTML = state.zones.map(z => {
+      const n = (z.ads || []).filter(a => a.status !== 'paused').length;
+      return `<div class="zone-item ${n ? 'active' : ''}">
+        <div class="zone-meta">
+          <div class="zone-title">${esc(z.name)}
+            <span class="pill ${z.type==='venue'?'':'gold'}">${esc(z.type)}</span>
+            ${n ? `<span class="pill">${n} live</span>` : `<span class="pill muted">empty</span>`}
           </div>
-        </div>`;
+          <div class="zone-sub">${z.type === 'global' ? 'Everywhere' :
+            `${z.lat}, ${z.lng} · ${z.radiusMi || 0.25} mi`} · ${n} ad${n===1?'':'s'}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="openZoneModal('${z.id}')">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteZone('${z.id}')">Delete</button>
+        </div>
+      </div>`;
     }).join('');
   }
 
-  function updatePushBtn() {
-    const btn = document.getElementById('push-btn');
-    const status = document.getElementById('push-status');
-    const n = selected.size;
-    btn.disabled = n === 0;
-    if (n === 0) status.textContent = 'Tap a sponsor card to select it, then push';
-    else         status.textContent = `${n} sponsor${n>1?'s':''} selected — push to go live`;
-    status.style.color = n ? 'var(--accent2)' : 'var(--text3)';
+  const ads = allAds();
+  const adList = document.getElementById('ad-list');
+  if (!ads.length) {
+    adList.innerHTML = '<div style="color:var(--text3);font-size:13px">No sold placements — sell a slot into a zone.</div>';
+  } else {
+    adList.innerHTML = ads.map(a => `
+      <div class="ad-item ${a.status==='active'?'live':''}">
+        <div class="zone-meta">
+          <div class="zone-title">${esc(a.name)}
+            <span class="pill">${esc(a.zone.name)}</span>
+            ${a.status==='paused'?'<span class="pill muted">paused</span>':''}
+          </div>
+          <div class="zone-sub">CPC $${Number(a.bidCpc||0).toFixed(2)} · ${esc(a.url||'no click URL')}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="openAdModal('${a.id}')">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteAd('${a.id}')">Remove</button>
+        </div>
+      </div>`).join('');
   }
 
-  function toggleSelect(id) {
-    if (selected.has(id)) selected.delete(id);
-    else selected.add(id);
-    renderGrid();
-    updatePushBtn();
+  document.getElementById('stat-zones').textContent = state.zones.length;
+  document.getElementById('stat-ads').textContent = ads.filter(a => a.status === 'active').length;
+  const cpcs = ads.map(a => Number(a.bidCpc) || 0).filter(n => n > 0);
+  const avg = cpcs.length ? (cpcs.reduce((s,n)=>s+n,0) / cpcs.length) : 0;
+  document.getElementById('stat-cpc').textContent = '$' + avg.toFixed(2);
+
+  document.getElementById('cfg-zone').value = state.network.zoneId || '';
+  document.getElementById('cfg-fill').value = String(!!state.network.fillWhenEmpty);
+  document.getElementById('cfg-slot').value = state.network.slot || 'strips';
+  renderAnalytics();
+}
+
+function renderAnalytics() {
+  document.getElementById('stat-imps').textContent = stats.impressions || 0;
+  document.getElementById('stat-clicks').textContent = stats.clicks || 0;
+  const ctr = stats.impressions ? ((stats.clicks / stats.impressions) * 100).toFixed(1) : '0';
+  document.getElementById('stat-ctr').textContent = ctr + '%';
+  const log = document.getElementById('event-log');
+  const events = stats.events || [];
+  if (!events.length) {
+    log.innerHTML = '<div>Waiting for phone events…</div>';
+    return;
   }
+  log.innerHTML = events.map(e => {
+    const t = new Date(e.t || e.ts || Date.now()).toLocaleTimeString();
+    return `<div>[${t}] ${esc(e.event)} · ${esc(e.sponsor || e.id || '')} · ${esc(e.src || '')}</div>`;
+  }).join('');
+}
 
-  // ── CRUD ───────────────────────────────────────────────────────────────────
-  function openModal(id) {
-    const sp = id ? sponsors.find(s => s.id === id) : null;
-    document.getElementById('modal-title').textContent = sp ? 'Edit Sponsor' : 'Add Sponsor';
-    document.getElementById('edit-id').value   = sp?.id || '';
-    document.getElementById('f-name').value    = sp?.name || '';
-    document.getElementById('f-tagline').value = sp?.tagline || '';
-    document.getElementById('f-logo').value    = sp?.logoUrl || '';
-    document.getElementById('f-url').value     = sp?.url || '';
-    previewLogo(sp?.logoUrl || '');
-    document.getElementById('overlay').classList.add('open');
+// Tabs
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+  };
+});
+
+function onZoneTypeChange() {
+  const t = document.getElementById('z-type').value;
+  document.getElementById('z-geo-fields').style.display = t === 'global' ? 'none' : '';
+  if (t === 'venue') document.getElementById('z-radius').value = '0.25';
+  if (t === 'geo') document.getElementById('z-radius').value = '10';
+}
+
+function openZoneModal(id) {
+  document.getElementById('zone-edit-id').value = id || '';
+  document.getElementById('zone-modal-title').textContent = id ? 'Edit zone' : 'New location zone';
+  const z = state.zones.find(x => x.id === id);
+  document.getElementById('z-name').value = z?.name || '';
+  document.getElementById('z-type').value = z?.type || 'venue';
+  document.getElementById('z-lat').value = z?.lat ?? '';
+  document.getElementById('z-lng').value = z?.lng ?? '';
+  document.getElementById('z-radius').value = z?.radiusMi ?? 0.25;
+  onZoneTypeChange();
+  document.getElementById('zone-overlay').classList.add('open');
+}
+function closeZoneModal() { document.getElementById('zone-overlay').classList.remove('open'); }
+
+function useMyLocation() {
+  if (!navigator.geolocation) { toast('Geolocation unavailable', 'err'); return; }
+  navigator.geolocation.getCurrentPosition(pos => {
+    document.getElementById('z-lat').value = pos.coords.latitude.toFixed(5);
+    document.getElementById('z-lng').value = pos.coords.longitude.toFixed(5);
+    toast('Location set', 'ok');
+  }, () => toast('Could not get location', 'err'), { timeout: 8000 });
+}
+
+function saveZone() {
+  const id = document.getElementById('zone-edit-id').value || uid();
+  const type = document.getElementById('z-type').value;
+  const name = document.getElementById('z-name').value.trim();
+  if (!name) { toast('Name required', 'err'); return; }
+  const payload = {
+    id, name, type, status: 'active',
+    lat: type === 'global' ? null : Number(document.getElementById('z-lat').value),
+    lng: type === 'global' ? null : Number(document.getElementById('z-lng').value),
+    radiusMi: type === 'global' ? null : Number(document.getElementById('z-radius').value) || 0.25,
+    ads: state.zones.find(z => z.id === id)?.ads || [],
+  };
+  if (type !== 'global' && (Number.isNaN(payload.lat) || Number.isNaN(payload.lng))) {
+    toast('Lat/lng required for this zone type', 'err'); return;
   }
+  const idx = state.zones.findIndex(z => z.id === id);
+  if (idx >= 0) state.zones[idx] = payload; else state.zones.push(payload);
+  persist(); render(); closeZoneModal(); toast('Zone saved', 'ok');
+}
 
-  function closeModal() { document.getElementById('overlay').classList.remove('open'); }
-  function closeOnOverlay(e) { if (e.target === document.getElementById('overlay')) closeModal(); }
+function deleteZone(id) {
+  if (!confirm('Delete this zone and its ads?')) return;
+  state.zones = state.zones.filter(z => z.id !== id);
+  persist(); render(); toast('Zone deleted', 'ok');
+}
 
-  function saveSponsor() {
-    const id      = document.getElementById('edit-id').value;
-    const name    = document.getElementById('f-name').value.trim();
-    const tagline = document.getElementById('f-tagline').value.trim();
-    const logoUrl = document.getElementById('f-logo').value.trim();
-    const url     = document.getElementById('f-url').value.trim();
+function openAdModal(id) {
+  const sel = document.getElementById('a-zone');
+  sel.innerHTML = state.zones.map(z => `<option value="${z.id}">${esc(z.name)} (${z.type})</option>`).join('');
+  if (!state.zones.length) { toast('Create a zone first', 'err'); return; }
+  document.getElementById('ad-edit-id').value = id || '';
+  document.getElementById('ad-modal-title').textContent = id ? 'Edit placement' : 'Sell a slot';
+  let ad = null, zoneId = state.zones[0].id;
+  for (const z of state.zones) {
+    const found = (z.ads || []).find(a => a.id === id);
+    if (found) { ad = found; zoneId = z.id; break; }
+  }
+  document.getElementById('a-zone').value = zoneId;
+  document.getElementById('a-name').value = ad?.name || '';
+  document.getElementById('a-tagline').value = ad?.tagline || '';
+  document.getElementById('a-logo').value = ad?.logoUrl || '';
+  document.getElementById('a-url').value = ad?.url || '';
+  document.getElementById('a-cpc').value = ad?.bidCpc ?? 0.5;
+  document.getElementById('a-status').value = ad?.status || 'active';
+  document.getElementById('ad-overlay').classList.add('open');
+}
+function closeAdModal() { document.getElementById('ad-overlay').classList.remove('open'); }
 
-    if (!name) { toast('Name required', 'err'); return; }
+function saveAd() {
+  const id = document.getElementById('ad-edit-id').value || uid();
+  const zoneId = document.getElementById('a-zone').value;
+  const zone = state.zones.find(z => z.id === zoneId);
+  if (!zone) { toast('Zone missing', 'err'); return; }
+  const name = document.getElementById('a-name').value.trim();
+  if (!name) { toast('Business name required', 'err'); return; }
+  const ad = {
+    id, name,
+    tagline: document.getElementById('a-tagline').value.trim(),
+    logoUrl: document.getElementById('a-logo').value.trim(),
+    url: document.getElementById('a-url').value.trim(),
+    bidCpc: Number(document.getElementById('a-cpc').value) || 0,
+    status: document.getElementById('a-status').value,
+    paid: true,
+    placements: ['splash', 'orb', 'strips'],
+  };
+  // remove from any zone first
+  for (const z of state.zones) z.ads = (z.ads || []).filter(a => a.id !== id);
+  zone.ads = zone.ads || [];
+  zone.ads.push(ad);
+  persist(); render(); closeAdModal(); toast('Placement saved — push live when ready', 'ok');
+}
 
-    if (id) {
-      const idx = sponsors.findIndex(s => s.id === id);
-      if (idx > -1) sponsors[idx] = { ...sponsors[idx], name, tagline, logoUrl, url };
-    } else {
-      sponsors.push({ id: crypto.randomUUID(), name, tagline, logoUrl, url });
+function deleteAd(id) {
+  if (!confirm('Remove this placement?')) return;
+  for (const z of state.zones) z.ads = (z.ads || []).filter(a => a.id !== id);
+  persist(); render(); toast('Removed', 'ok');
+}
+
+function saveNetworkCfg() {
+  state.network = {
+    zoneId: document.getElementById('cfg-zone').value.trim(),
+    fillWhenEmpty: document.getElementById('cfg-fill').value === 'true',
+    slot: document.getElementById('cfg-slot').value,
+    provider: 'coinzilla',
+  };
+  persist();
+  pushAll().then(() => toast('Network settings saved & pushed', 'ok'));
+}
+
+function buildInventoryPayload() {
+  return {
+    version: 2,
+    zones: state.zones.map(z => ({
+      ...z,
+      ads: (z.ads || []).filter(a => a.status === 'active'),
+    })),
+    network: state.network,
+    pushedAt: new Date().toISOString(),
+  };
+}
+
+function buildSponsorCompat(inv) {
+  // Flatten for legacy throw/sponsor consumers
+  const ads = [];
+  for (const z of inv.zones) {
+    for (const a of (z.ads || [])) {
+      ads.push({
+        ...a,
+        isVenue: z.type === 'venue',
+        venueId: z.type === 'venue' ? z.id : undefined,
+        lat: z.lat, lng: z.lng, radiusMi: z.radiusMi,
+        zoneType: z.type, zoneName: z.name,
+      });
     }
-    save();
-    closeModal();
-    renderGrid();
-    updatePushBtn();
-    toast(id ? 'Updated' : 'Sponsor added — select it and push live', 'ok');
   }
+  return {
+    sponsor: ads[0] || null,
+    sponsors: ads,
+    network: inv.network,
+    pushedAt: inv.pushedAt,
+  };
+}
 
-  function deleteSponsor(id) {
-    const sp = sponsors.find(s => s.id === id);
-    if (!confirm(`Remove ${sp?.name}?`)) return;
-    sponsors = sponsors.filter(s => s.id !== id);
-    selected.delete(id);
-    save();
-    renderGrid();
-    updatePushBtn();
-    toast('Removed', 'ok');
+function buildVenuesCompat(inv) {
+  return inv.zones
+    .filter(z => z.type === 'venue' || z.type === 'geo')
+    .map(z => {
+      const ad = (z.ads || [])[0];
+      return {
+        id: z.id,
+        name: ad?.name || z.name,
+        logoUrl: ad?.logoUrl || '',
+        tagline: ad?.tagline || '',
+        clickUrl: ad?.url || '',
+        lat: z.lat, lng: z.lng,
+        radiusMi: z.radiusMi || 0.25,
+        status: 'active',
+        revenueSharePct: 15,
+      };
+    });
+}
+
+function publish(topic, payload) {
+  return new Promise((resolve, reject) => {
+    if (!mqttClient?.connected) { reject(new Error('MQTT offline')); return; }
+    mqttClient.publish(topic, JSON.stringify(payload), { qos: 1, retain: true }, err => {
+      if (err) reject(err); else resolve();
+    });
+  });
+}
+
+async function pushAll() {
+  const inv = buildInventoryPayload();
+  try {
+    await publish(TOPIC_INV, inv);
+    await publish(TOPIC_SPON, buildSponsorCompat(inv));
+    await publish(TOPIC_VENUE, buildVenuesCompat(inv));
+    toast('Live — phones will pick by location', 'ok');
+  } catch (e) {
+    toast('Push failed: ' + e.message, 'err');
   }
+}
 
-  function previewLogo(url) {
-    const img = document.getElementById('logo-preview');
-    if (url && url.startsWith('http')) {
-      img.src = url;
-      img.style.display = 'block';
-      img.onerror = () => { img.style.display = 'none'; };
-    } else {
-      img.style.display = 'none';
-    }
-  }
-
-  // ── UTILS ──────────────────────────────────────────────────────────────────
-  let toastTimer;
-  function toast(msg, type = '') {
-    const el = document.getElementById('toast');
-    el.textContent = msg;
-    el.className = 'toast show ' + type;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { el.className = 'toast'; }, 3000);
-  }
-
-  function escHtml(s) {
-    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
-
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
-
-  // ── INIT ───────────────────────────────────────────────────────────────────
-  load();
-  renderGrid();
-  updatePushBtn();
-  connectMQTT();
+load();
+render();
+connectMQTT();
 </script>
 </body>
 </html>

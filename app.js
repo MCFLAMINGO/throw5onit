@@ -284,31 +284,31 @@ const state = {
    3. SCREEN ROUTER
    ═════════════════════════════════════════════════════════════════════ */
 let currentScreen = 'setup';
+let _screenTimer = null;
 
 function showScreen(id) {
-  const prev = document.querySelector('.screen.active');
-  if (prev) {
-    prev.classList.add('exit');
-    setTimeout(() => prev.classList.remove('active', 'exit'), 280);
-  }
+  // Hard-cancel in-flight transitions so rapid taps don't stack glitchy fades
+  if (_screenTimer) { clearTimeout(_screenTimer); _screenTimer = null; }
+  document.querySelectorAll('.screen.active, .screen.exit').forEach(el => {
+    el.classList.remove('active', 'exit');
+  });
   const next = document.getElementById('screen-' + id);
   if (!next) return;
-  setTimeout(() => {
-    next.classList.add('active');
-    currentScreen = id;
-    // When navigating TO first-scan, always reset so camera button is visible
-    if (id === 'first-scan') {
-      stopFirstScan();
-      const startBtn = document.getElementById('btn-first-scan-start');
-      if (startBtn) { startBtn.style.display = ''; startBtn.textContent = 'Tap to Open Camera'; }
-      const status = document.getElementById('first-scan-status');
-      if (status) status.textContent = '';
-    }
-    // Always re-render crew when returning to wallet
-    if (id === 'wallet') {
-      renderCrew();
-    }
-  }, prev ? 30 : 0);
+  // Double rAF = paint-clean enter (avoids opacity flicker)
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      next.classList.add('active');
+      currentScreen = id;
+      if (id === 'first-scan') {
+        stopFirstScan();
+        const startBtn = document.getElementById('btn-first-scan-start');
+        if (startBtn) { startBtn.style.display = ''; startBtn.textContent = 'Tap to Open Camera'; }
+        const status = document.getElementById('first-scan-status');
+        if (status) status.textContent = '';
+      }
+      if (id === 'wallet') renderCrew();
+    });
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -523,15 +523,39 @@ function subscribeSponsorChannel() {
   try {
     const clientId = 'throw_spn_' + Math.random().toString(36).slice(2, 8);
     const c = mqtt.connect(MQTT_BROKER, { clientId, clean: true, connectTimeout: 8000, reconnectPeriod: 0 });
-    c.on('connect', () => c.subscribe('throw/sponsor', { qos: 0 }));
-    c.on('message', (_t, msg) => {
+    c.on('connect', () => {
+      c.subscribe('throw/sponsor', { qos: 0 });
+      c.subscribe('throw/ads/inventory', { qos: 1 });
+      c.subscribe('throw/venues', { qos: 1 });
+    });
+    c.on('message', (topic, msg) => {
       try {
-        const data = JSON.parse(msg.toString());
+        const raw = msg.toString();
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (topic === 'throw/ads/inventory') {
+          try { localStorage.setItem('throw_ads_inventory', JSON.stringify(data)); } catch(_) {}
+          if (data.network) {
+            try { localStorage.setItem('throw_ad_network_cfg', JSON.stringify(data.network)); } catch(_) {}
+          }
+          // Refresh active sponsor from new inventory if we have GPS cache
+          resolveActiveSponsor().then(sp => { if (sp) setSponsor(sp); }).catch(() => {});
+          return;
+        }
+        if (topic === 'throw/venues') {
+          const venues = Array.isArray(data) ? data : (data.venues || []);
+          try { localStorage.setItem('throw_venues', JSON.stringify(venues)); } catch(_) {}
+          return;
+        }
+        // Legacy throw/sponsor
         const sp  = data.sponsor  || null;
         const all = data.sponsors || (sp ? [sp] : []);
         _allSponsors = all;
         try { localStorage.setItem('throw_active_sponsor', JSON.stringify(sp)); } catch(_) {}
         try { localStorage.setItem('throw_all_sponsors',   JSON.stringify(all)); } catch(_) {}
+        if (data.network) {
+          try { localStorage.setItem('throw_ad_network_cfg', JSON.stringify(data.network)); } catch(_) {}
+        }
         setSponsor(sp);
       } catch(_) {}
     });
@@ -707,11 +731,10 @@ function renderSponsorStrips() {
       } else {
         el.textContent = item.text || item.name?.slice(0,3) || '$';
       }
-      // Click = CPC event
+      // Click = tracked CPC (direct sold) or house — never open raw without tracking
       el.addEventListener('click', (e) => {
         e.stopPropagation();
-        logSponsorEvent('click', item);
-        if (item.url) window.open(item.url, '_blank', 'noopener');
+        openSponsorClick(item, 'strip');
       });
       track.appendChild(el);
     });
@@ -737,27 +760,49 @@ function renderSponsorStrips() {
   }
 }
 
-// Log sponsor analytics event via MQTT
+// Log sponsor analytics event via MQTT (+ ads analytics for /ads dashboard)
 function logSponsorEvent(type, item) {
-  // type: 'impression' | 'click' | 'throw_coincidence'
   const payload = {
-    event:     'sponsor_event',
+    event:     (type === 'click' || type === 'impression') ? type : 'sponsor_event',
     type,
+    id:        item?.id || item?.name || 'house',
     sponsor:   item?.name || 'house',
     paid:      !!item?.paid,
+    src:       item?._clickSrc || 'app',
     addr:      state.account?.address || 'anon',
     ts:        Date.now(),
   };
-  // Publish to analytics topic (fire-and-forget)
   try {
     const c = mqtt.connect(MQTT_BROKER, {
-      clientId: 'sp_' + Math.random().toString(36).slice(2,8),
+      clientId: 'sa_' + Math.random().toString(36).slice(2, 8),
       clean: true, connectTimeout: 4000, reconnectPeriod: 0,
     });
     c.on('connect', () => {
-      c.publish('throw/sponsor/analytics', JSON.stringify(payload), { qos: 0 }, () => c.end(true));
+      c.publish('throw/sponsor/analytics', JSON.stringify(payload), { qos: 0 });
+      c.publish('throw/ads/analytics', JSON.stringify(payload), { qos: 0 }, () => {
+        try { c.end(true); } catch(_) {}
+      });
     });
   } catch(_) {}
+  try {
+    fetch('/api/ads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+  } catch(_) {}
+}
+
+function openSponsorClick(item, src) {
+  if (!item || item.text) return;
+  item._clickSrc = src || 'strip';
+  logSponsorEvent('click', item);
+  const dest = item.url || item.clickUrl;
+  if (!dest) return;
+  const tracked = '/api/ads/click?id=' + encodeURIComponent(item.id || item.name || 'ad')
+    + '&src=' + encodeURIComponent(src || 'strip')
+    + '&url=' + encodeURIComponent(dest);
+  window.open(tracked, '_blank', 'noopener');
 }
 
 // Show post-throw sponsor credit line
@@ -773,18 +818,54 @@ function showThrowSponsorCredit(sponsorName) {
   }, 3000);
 }
 
-// ── GPS Venue Proximity Resolution ────────────────────────────────────────
-// Venues register with lat/lng + radiusMi. On app open we check GPS and
-// prefer the nearest venue's ad over the global sponsor.
-// Venues stored in 'throw_venues' localStorage key (populated by dashboard push).
+// ── GPS + inventory ad resolution ─────────────────────────────────────────
+// Priority: venue/geo sold inventory → legacy venues → global MQTT sponsor → Coinzilla fill
 
 function haversineDistMi(lat1, lng1, lat2, lng2) {
-  const R = 3958.8; // Earth radius miles
+  const R = 3958.8;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLng = (lng2 - lng1) * Math.PI / 180;
   const a = Math.sin(dLat/2)**2 +
     Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLng/2)**2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function pickAdsFromInventory(inventory, lat, lng) {
+  if (!inventory?.zones) return [];
+  const now = Date.now();
+  const scored = [];
+  for (const zone of inventory.zones) {
+    if (zone.status && zone.status !== 'active') continue;
+    const ads = (zone.ads || []).filter(a => a && a.name && a.status !== 'paused' && (!a.endsAt || a.endsAt > now));
+    if (!ads.length) continue;
+    let score = 0;
+    let dist = null;
+    if (zone.type === 'global') {
+      score = 10;
+    } else if ((zone.type === 'geo' || zone.type === 'venue') && zone.lat != null && zone.lng != null && lat != null && lng != null) {
+      dist = haversineDistMi(lat, lng, Number(zone.lat), Number(zone.lng));
+      const radius = Number(zone.radiusMi) || (zone.type === 'venue' ? 0.25 : 25);
+      if (dist > radius) continue;
+      score = zone.type === 'venue' ? 100 - dist * 10 : 70 - dist;
+    } else if (zone.type === 'geo' || zone.type === 'venue') {
+      continue;
+    }
+    for (const ad of ads) {
+      scored.push({
+        ...ad,
+        zoneId: zone.id,
+        zoneName: zone.name,
+        zoneType: zone.type,
+        dist,
+        score: score + (Number(ad.bidCpc) || 0) * 0.01,
+        isVenue: zone.type === 'venue',
+        venueId: zone.type === 'venue' ? (zone.venueId || zone.id) : undefined,
+        paid: true,
+      });
+    }
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored;
 }
 
 function getNearbyVenueSponsor(lat, lng) {
@@ -814,20 +895,100 @@ function getNearbyVenueSponsor(lat, lng) {
   } catch(_) { return null; }
 }
 
+function mountCoinzillaFill(zoneId) {
+  if (!zoneId) return;
+  let host = document.getElementById('coinzilla-fill');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'coinzilla-fill';
+    host.style.cssText = 'width:100%;max-width:320px;margin:10px auto 0;min-height:0';
+    const arena = document.querySelector('#screen-wallet .action-grid');
+    if (arena && arena.parentNode) arena.parentNode.insertBefore(host, arena);
+    else {
+      const wallet = document.getElementById('screen-wallet');
+      if (wallet) wallet.appendChild(host);
+      else document.body.appendChild(host);
+    }
+  }
+  if (host.dataset.zone === String(zoneId) && host.childNodes.length) return;
+  host.dataset.zone = String(zoneId);
+  host.innerHTML = '';
+  const unit = document.createElement('div');
+  unit.className = 'coinzilla';
+  unit.setAttribute('data-zone', String(zoneId));
+  host.appendChild(unit);
+  if (!document.getElementById('coinzilla-lib')) {
+    const s = document.createElement('script');
+    s.id = 'coinzilla-lib';
+    s.async = true;
+    s.src = 'https://coinzillatag.com/lib/display.js';
+    document.head.appendChild(s);
+  }
+  try {
+    window.coinzilla_display = window.coinzilla_display || [];
+    window.coinzilla_display.push({ zone: String(zoneId) });
+  } catch(_) {}
+}
+
+function clearCoinzillaFill() {
+  const host = document.getElementById('coinzilla-fill');
+  if (host) { host.innerHTML = ''; delete host.dataset.zone; }
+}
+
 async function resolveActiveSponsor() {
-  // 1. Try GPS — venue ad takes priority over global sponsor
+  let lat = null, lng = null;
   try {
     const pos = await new Promise((res, rej) =>
       navigator.geolocation.getCurrentPosition(res, rej, { timeout: 3000, maximumAge: 60000 })
     );
-    const venue = getNearbyVenueSponsor(pos.coords.latitude, pos.coords.longitude);
-    if (venue) return venue;
-  } catch(_) {} // GPS denied or timed out — fall through
+    lat = pos.coords.latitude;
+    lng = pos.coords.longitude;
+    try { localStorage.setItem('throw_last_geo', JSON.stringify({ lat, lng, ts: Date.now() })); } catch(_) {}
+  } catch(_) {
+    try {
+      const cached = JSON.parse(localStorage.getItem('throw_last_geo') || 'null');
+      if (cached && Date.now() - cached.ts < 30 * 60 * 1000) {
+        lat = cached.lat; lng = cached.lng;
+      }
+    } catch(_) {}
+  }
 
-  // 2. Fall back to global sponsor pushed via MQTT
+  try {
+    const inv = JSON.parse(localStorage.getItem('throw_ads_inventory') || 'null');
+    const picked = pickAdsFromInventory(inv, lat, lng);
+    if (picked.length) {
+      _allSponsors = picked;
+      clearCoinzillaFill();
+      logSponsorEvent('impression', picked[0]);
+      return picked[0];
+    }
+  } catch(_) {}
+
+  if (lat != null && lng != null) {
+    const venue = getNearbyVenueSponsor(lat, lng);
+    if (venue) { clearCoinzillaFill(); return venue; }
+  }
+
   try {
     const sp = JSON.parse(localStorage.getItem('throw_active_sponsor') || 'null');
-    if (sp?.name) return sp;
+    if (sp?.name) { clearCoinzillaFill(); return sp; }
+  } catch(_) {}
+
+  try {
+    const net = JSON.parse(localStorage.getItem('throw_ad_network_cfg') || 'null');
+    if (net?.fillWhenEmpty !== false && net?.zoneId) {
+      mountCoinzillaFill(net.zoneId);
+    } else {
+      fetch('/api/ads' + (lat != null ? ('?lat=' + lat + '&lng=' + lng) : ''))
+        .then(r => r.json())
+        .then(data => {
+          if (data?.network?.enabled && data.network.zoneId && data.network.fillWhenEmpty !== false) {
+            try { localStorage.setItem('throw_ad_network_cfg', JSON.stringify(data.network)); } catch(_) {}
+            mountCoinzillaFill(data.network.zoneId);
+          }
+        })
+        .catch(() => {});
+    }
   } catch(_) {}
 
   return null;
@@ -1729,12 +1890,15 @@ function renderQR(addr) {
    ═════════════════════════════════════════════════════════════════════ */
 
 /* ── Proximity throw: fires Sonic + Gesture + MQTT simultaneously ── */
+let _throwInFlight = false;
 async function executeProximityThrow(target) {
+  if (_throwInFlight) return;
   if (!target || !target.addr) {
-    showToast('👆 Select a friend first');
+    showToast('Select a friend first');
     return;
   }
 
+  _throwInFlight = true;
   // Generate unique throwId — dedup guard so money only moves once
   const throwId = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
   state.pendingThrowId = throwId;
@@ -1806,8 +1970,10 @@ async function executeProximityThrow(target) {
     setTimeout(() => { hideTxFlash(); showScreen('wallet'); }, 1800);
   } catch(e) {
     hideTxFlash();
-    showToast('✕ Throw failed: ' + (e.message || String(e)));
+    showToast('Throw failed: ' + (e.message || String(e)));
     showScreen('wallet');
+  } finally {
+    _throwInFlight = false;
   }
 }
 

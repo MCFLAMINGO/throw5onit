@@ -1,6 +1,8 @@
 {
   "rewrites": [
-    { "source": "/ads", "destination": "/ads.html" }
+    { "source": "/ads", "destination": "/ads.html" },
+    { "source": "/advertise", "destination": "/venue-signup.html" },
+    { "source": "/api/ads/click", "destination": "/api/ads" }
   ],
   "headers": [
     {
@@ -8,7 +10,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:; worker-src blob: 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src *; img-src 'self' data: blob: https:; frame-ancestors 'none';"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: https://coinzillatag.com https://*.coinzilla.com; worker-src blob: 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src *; img-src 'self' data: blob: https:; frame-src 'self' https://coinzillatag.com https://*.coinzilla.com; frame-ancestors 'none';"
         },
         {
           "key": "X-Content-Type-Options",
