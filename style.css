@@ -51,10 +51,11 @@ html, body {
   padding: calc(var(--safe-top) + 16px) 20px calc(var(--safe-bot) + 20px);
   opacity: 0;
   pointer-events: none;
-  transform: translateY(24px);
-  transition: opacity 0.28s ease, transform 0.28s ease;
+  transform: translateY(12px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
   overflow-y: auto;
   overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 .screen.active {
   opacity: 1;
@@ -63,7 +64,7 @@ html, body {
 }
 .screen.exit {
   opacity: 0;
-  transform: translateY(-20px);
+  transform: translateY(-8px);
   pointer-events: none;
 }
 
