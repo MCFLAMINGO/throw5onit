@@ -614,6 +614,14 @@ function subscribeDemoCredits(myAddr) {
         setTimeout(() => hideTxFlash(), 3500);
         refreshBalances();
       }
+      // Someone claimed a throw you sent
+      if (data.event === 'claim_claimed' && toMatch) {
+        const amt = parseFloat(data.amount) || 0;
+        showTxFlash('✅', '$' + amt.toFixed(2), 'They pocketed your throw');
+        moneyRain(6);
+        markOutgoingClaimClaimed(data.claimId, data.by);
+        setTimeout(() => hideTxFlash(), 2500);
+      }
       // Mutual contact add — someone scanned our QR, auto-add them back
       if (data.event === 'contact_added' && toMatch && data.fromAddr && data.fromName) {
         upsertContact(data.fromName, data.fromAddr);
@@ -3396,6 +3404,244 @@ function renderInstallQR() {
   }
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════════
+   18b. THROW-TO-ANYONE + CLAIM LINKS
+   ═════════════════════════════════════════════════════════════════════ */
+
+let _claimUi = { claimId: null, preview: null, lastCreated: null };
+
+function setAnyoneStatus(msg) {
+  const el = document.getElementById('throw-anyone-status');
+  if (el) el.textContent = msg || '';
+}
+
+function openClaimShareModal(claim) {
+  const modal = document.getElementById('claim-share-modal');
+  if (!modal) return;
+  document.getElementById('claim-share-amt').textContent = '$' + Number(claim.amount).toFixed(2);
+  document.getElementById('claim-share-url').textContent = claim.url;
+  const canvas = document.getElementById('claim-qr-canvas');
+  if (canvas && typeof QRCode !== 'undefined') {
+    QRCode.toCanvas(canvas, claim.url, { width: 200, margin: 1, color: { light: '#ffffff', dark: '#000000' } }, () => {});
+  }
+  modal.classList.remove('hidden');
+  _claimUi.lastCreated = claim;
+}
+
+function closeClaimShareModal() {
+  document.getElementById('claim-share-modal')?.classList.add('hidden');
+}
+
+async function executeThrowToAnyone() {
+  if (!state.account?.address) { showToast('Wallet not ready'); return; }
+  const amount = state.throwAmount || 5;
+  if ((state.total || 0) < amount) { showToast('Not enough balance'); return; }
+  const hint = (document.getElementById('throw-anyone-input')?.value || '').trim();
+  const btn = document.getElementById('btn-throw-anyone');
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  setAnyoneStatus('Locking cash in a claim pot…');
+  try {
+    moneyRain(8);
+    showTxFlash('💸', '$' + amount, hint ? ('Throwing to ' + hint + '…') : 'Creating claim link…');
+    const claim = await createOpenClaim({
+      amount,
+      fromAddr: state.account.address,
+      fromName: getHandle() || state.account.address.slice(0, 6),
+      toHint: hint || null,
+      memo: 'THROW claim',
+    });
+    // Backup publish via API
+    try {
+      fetch('/api/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', ...claim.record }),
+      }).catch(() => {});
+    } catch(_) {}
+    hideTxFlash();
+    setAnyoneStatus('Link ready — share it. Money waits until they tap.');
+    openClaimShareModal(claim);
+    const shared = await shareClaimLink(claim);
+    if (shared === 'copied') showToast('Claim link copied');
+    else if (shared === 'shared') showToast('Shared — waiting for them to claim');
+  } catch (e) {
+    hideTxFlash();
+    setAnyoneStatus('Failed: ' + (e.message || e));
+    showToast('Claim failed: ' + (e.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'LINK'; }
+  }
+}
+
+async function openClaimScreen(claimId) {
+  claimId = claimId || readPendingClaimId();
+  if (!claimId) return false;
+  stashPendingClaimId(claimId);
+  _claimUi.claimId = claimId;
+  showScreen('claim');
+  const amtEl = document.getElementById('claim-amount');
+  const fromEl = document.getElementById('claim-from');
+  const status = document.getElementById('claim-status');
+  const btn = document.getElementById('btn-claim-pocket');
+  if (status) status.textContent = 'Finding your cash…';
+  if (btn) btn.disabled = true;
+
+  let preview = null;
+  try {
+    const res = await fetch('/api/claim?id=' + encodeURIComponent(claimId));
+    if (res.ok) {
+      const data = await res.json();
+      preview = data.claim;
+    }
+  } catch(_) {}
+  if (!preview) {
+    try { preview = await fetchClaimRecord(claimId); } catch(_) {}
+  }
+  _claimUi.preview = preview;
+  if (!preview) {
+    if (amtEl) amtEl.textContent = '—';
+    if (fromEl) fromEl.textContent = 'Claim not found or already pocketed';
+    if (status) status.textContent = 'Ask them to throw again.';
+    return true;
+  }
+  const amount = Number(preview.netAmount || preview.amount) || 0;
+  if (amtEl) amtEl.textContent = '$' + amount.toFixed(2);
+  if (fromEl) fromEl.textContent = (preview.fromName || 'Someone') + ' threw this at you';
+  if (status) status.textContent = preview.toHint ? ('For: ' + preview.toHint) : 'Ready when you are';
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = state.account ? 'Put in my pocket' : 'Create wallet & claim';
+  }
+  return true;
+}
+
+async function executeClaimPocket() {
+  const claimId = _claimUi.claimId || readPendingClaimId();
+  if (!claimId) return;
+  const btn = document.getElementById('btn-claim-pocket');
+  const status = document.getElementById('claim-status');
+  if (btn) { btn.disabled = true; btn.textContent = 'Claiming…'; }
+  if (status) status.textContent = 'Moving cash into your pocket…';
+
+  try {
+    // Ensure wallet exists
+    if (!state.account) {
+      const acc = await generateWallet();
+      await initWallet(acc, true);
+      // initWallet navigates to wallet — come back
+      showScreen('claim');
+    }
+    const result = await redeemOpenClaim(claimId, state.account.address);
+    clearPendingClaimId();
+    moneyRain(12);
+    showTxFlash('🏆', '$' + Number(result.amount).toFixed(2), 'In your pocket');
+    if (status) status.textContent = 'Done.';
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try { navigator.vibrate([30,40,50,40,80,40,100,30,150]); } catch(_) {}
+    }
+    setTimeout(() => {
+      hideTxFlash();
+      showScreen('wallet');
+      try { refreshBalances(); } catch(_) {}
+    }, 1600);
+  } catch (e) {
+    if (status) status.textContent = 'Failed: ' + (e.message || e);
+    if (btn) { btn.disabled = false; btn.textContent = 'Try again'; }
+    showToast('Claim failed: ' + (e.message || e));
+  }
+}
+
+function wireClaimAndAnyoneUI() {
+  const anyoneBtn = document.getElementById('btn-throw-anyone');
+  if (anyoneBtn) anyoneBtn.onclick = () => executeThrowToAnyone();
+
+  const pickBtn = document.getElementById('btn-pick-contact');
+  if (pickBtn) pickBtn.onclick = async () => {
+    setAnyoneStatus('Opening contacts…');
+    const c = await pickDeviceContact();
+    if (!c) {
+      setAnyoneStatus('Contacts picker unavailable — type a phone or email');
+      document.getElementById('throw-anyone-input')?.focus();
+      return;
+    }
+    const hint = c.tel || c.email || c.name;
+    const input = document.getElementById('throw-anyone-input');
+    if (input) input.value = hint;
+    setAnyoneStatus('Selected ' + (c.name || hint) + ' — tap LINK');
+  };
+
+  const qrBtn = document.getElementById('btn-claim-qr');
+  if (qrBtn) qrBtn.onclick = async () => {
+    if (_claimUi.lastCreated) openClaimShareModal(_claimUi.lastCreated);
+    else await executeThrowToAnyone();
+  };
+
+  const nfcBtn = document.getElementById('btn-nfc-write');
+  if (nfcBtn) {
+    if (!('NDEFReader' in window)) nfcBtn.style.display = 'none';
+    nfcBtn.onclick = async () => {
+      try {
+        let claim = _claimUi.lastCreated;
+        if (!claim) {
+          setAnyoneStatus('Creating claim for NFC…');
+          claim = await createOpenClaim({
+            amount: state.throwAmount || 5,
+            fromAddr: state.account.address,
+            fromName: getHandle() || state.account.address.slice(0, 6),
+            toHint: 'NFC',
+          });
+          _claimUi.lastCreated = claim;
+        }
+        setAnyoneStatus('Hold phone to NFC tag…');
+        await nfcWriteClaimUrl(claim.url);
+        setAnyoneStatus('Wrote claim to tag');
+        showToast('NFC tag ready');
+      } catch (e) {
+        setAnyoneStatus(e.message || 'NFC failed');
+      }
+    };
+  }
+
+  const pushBtn = document.getElementById('btn-enable-push');
+  if (pushBtn) pushBtn.onclick = async () => {
+    const res = await enableThrowPush();
+    if (res.ok) {
+      setAnyoneStatus('Notifications on — we can ping you when cash moves');
+      showToast('Notifications enabled');
+    } else {
+      setAnyoneStatus('Notifications: ' + (res.reason || 'unavailable'));
+    }
+  };
+
+  document.getElementById('btn-claim-share-now')?.addEventListener('click', async () => {
+    if (_claimUi.lastCreated) await shareClaimLink(_claimUi.lastCreated);
+  });
+  document.getElementById('btn-claim-share-copy')?.addEventListener('click', async () => {
+    if (!_claimUi.lastCreated) return;
+    try {
+      await navigator.clipboard.writeText(_claimUi.lastCreated.url);
+      showToast('Copied');
+    } catch(_) {}
+  });
+  document.getElementById('btn-claim-share-close')?.addEventListener('click', closeClaimShareModal);
+
+  document.getElementById('btn-claim-pocket')?.addEventListener('click', () => executeClaimPocket());
+  document.getElementById('btn-claim-later')?.addEventListener('click', () => {
+    showScreen(state.account ? 'wallet' : 'splash');
+  });
+
+  // Handle claim_claimed notifications on credit topic
+  // (subscribeDemoCredits already listens — extend via message hook below if needed)
+}
+
+async function maybeOpenClaimAfterWallet() {
+  const id = readPendingClaimId();
+  if (!id) return false;
+  return openClaimScreen(id);
+}
+
+
 /* ═══════════════════════════════════════════════════════════════════════
    19. EVENT WIRING (DOMContentLoaded)
    ═════════════════════════════════════════════════════════════════════ */
@@ -3870,6 +4116,12 @@ let _bootKillTimer = setTimeout(hideBootLoader, 10000);
 
 document.addEventListener('DOMContentLoaded', async () => {
 
+  // Claim deep link /c/ID or ?claim= — stash before routing so catch works after wallet create
+  try {
+    const earlyClaim = parseClaimIdFromLocation();
+    if (earlyClaim) stashPendingClaimId(earlyClaim);
+  } catch(_) {}
+
   // Subscribe to global sponsor channel immediately — retained message arrives within ~1s
   try { subscribeSponsorChannel(); } catch(_) {}
 
@@ -4067,6 +4319,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   /* ── Throw screen ── */
   document.getElementById('throw-back').onclick = () => showScreen('wallet');
+  try { wireClaimAndAnyoneUI(); } catch(e) { console.warn('claim UI wire failed', e); }
 
   /* ── Bet setup screen ── */
   document.getElementById('bet-setup-back').onclick = () => showScreen('wallet');
@@ -4320,10 +4573,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         await showSponsorSplash(_cachedSponsor);
       }
       await initWallet(saved);
+      try {
+        if (await maybeOpenClaimAfterWallet()) return;
+      } catch(e) { console.warn('claim open failed', e); }
       return;
     }
 
-    // No wallet yet
+    // No wallet yet — if claim link, show claim screen (wallet created on pocket tap)
+    const pendingClaim = readPendingClaimId();
+    if (pendingClaim) {
+      hideBootLoader();
+      try { await openClaimScreen(pendingClaim); return; } catch(_) {}
+    }
     if (isStandalone()) {
       // Installed PWA, first time — go to setup
       showScreen('setup');
