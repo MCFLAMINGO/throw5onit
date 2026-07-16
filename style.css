@@ -4450,3 +4450,90 @@ body:has(.demo-banner:not(.hidden)) .screen {
   border-radius: 12px;
   margin: 0 auto;
 }
+
+/* ── POKER TABLE CENTER + ANNOUNCER ───────────────────────────────────── */
+.poker-table-toolbar {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+.poker-tool-btn {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.05);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+}
+.poker-tool-btn.on {
+  background: rgba(0,229,160,0.15);
+  border-color: rgba(0,229,160,0.45);
+  color: var(--accent);
+}
+.poker-announce {
+  width: min(92vw, 420px);
+  margin: 0 auto 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.25s, box-shadow 0.25s, transform 0.25s;
+}
+.poker-announce.flash {
+  background: rgba(0,229,160,0.22);
+  box-shadow: 0 0 28px rgba(0,229,160,0.35);
+  transform: scale(1.02);
+}
+
+/* Center-of-table: phone face-up in the middle — big pot, loud glow */
+#screen-poker-table.table-center {
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 42%, rgba(0,229,160,0.18), transparent 60%),
+    radial-gradient(ellipse 90% 70% at 50% 100%, rgba(0,0,0,0.9), #000 80%),
+    #050807;
+}
+#screen-poker-table.table-center .poker-pot-arena {
+  height: min(52vh, 380px);
+  margin-top: 4px !important;
+}
+#screen-poker-table.table-center #poker-pot-orb {
+  width: 168px;
+  height: 168px;
+  box-shadow:
+    0 0 40px rgba(0,229,160,0.45),
+    0 0 90px rgba(0,229,160,0.25),
+    inset 0 0 40px rgba(0,229,160,0.12);
+  animation: tableOrbPulse 2.8s ease-in-out infinite;
+}
+#screen-poker-table.table-center #poker-pot-total {
+  font-size: 2.4rem;
+  font-weight: 800;
+}
+#screen-poker-table.table-center .poker-announce {
+  font-size: 18px;
+  padding: 14px 18px;
+  background: rgba(0,0,0,0.45);
+  border-color: rgba(0,229,160,0.3);
+}
+#screen-poker-table.table-center .poker-action-panel {
+  background: rgba(0,0,0,0.35);
+  border-radius: 16px;
+  padding: 10px;
+}
+@keyframes tableOrbPulse {
+  0%, 100% { box-shadow: 0 0 36px rgba(0,229,160,0.4), 0 0 80px rgba(0,229,160,0.2); }
+  50% { box-shadow: 0 0 56px rgba(0,229,160,0.65), 0 0 110px rgba(0,229,160,0.35); }
+}

@@ -4350,6 +4350,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (pokerPayout) pokerPayout.onclick = onPokerPayoutClick;
   const pokerJoinSelf = document.getElementById('poker-join-self');
   if (pokerJoinSelf) pokerJoinSelf.onchange = () => renderPokerSetup();
+  loadPokerTablePrefs();
+  const voiceToggle = document.getElementById('btn-poker-voice-toggle');
+  if (voiceToggle) voiceToggle.onclick = () => {
+    _pokerVoiceOn = !_pokerVoiceOn;
+    applyPokerTableMode();
+    if (_pokerVoiceOn) pokerSpeak('Voice on');
+  };
+  const centerToggle = document.getElementById('btn-poker-center-toggle');
+  if (centerToggle) centerToggle.onclick = () => {
+    _pokerTableCenter = !_pokerTableCenter;
+    applyPokerTableMode();
+  };
+  const vSetup = document.getElementById('poker-table-voice');
+  const cSetup = document.getElementById('poker-table-center');
+  if (vSetup) vSetup.onchange = () => { _pokerVoiceOn = !!vSetup.checked; applyPokerTableMode(); };
+  if (cSetup) cSetup.onchange = () => { _pokerTableCenter = !!cSetup.checked; applyPokerTableMode(); };
 
   /* ── Pot screen ── */
   document.getElementById('btn-win').onclick  = () => settleBet(true);
@@ -4788,6 +4804,143 @@ function pokerHaptic() {
   try { if (navigator.vibrate) navigator.vibrate([30,40,50,40,80,40,100,30,150,20,200]); } catch(_) {}
 }
 
+/* ── Table voice + center-of-table display ──
+   Real cards stay physical. This phone is the glowing pot in the middle
+   that calls blinds, turns, and actions out loud. */
+let _pokerVoiceOn = true;
+let _pokerTableCenter = true;
+let _pokerSpeakChain = Promise.resolve();
+
+function pokerSeatName(seat) {
+  if (!seat) return 'Player';
+  const n = (seat.name || '').trim();
+  if (!n || n.toUpperCase() === 'YOU') {
+    // Prefer a friendlier call if it's local
+    try {
+      const h = typeof getHandle === 'function' ? getHandle() : '';
+      if (h) return h;
+    } catch(_) {}
+  }
+  return n || (seat.addr ? seat.addr.slice(2, 6).toUpperCase() : 'Player');
+}
+
+function setPokerAnnounce(line, speak) {
+  const el = document.getElementById('poker-announce-line');
+  if (el) {
+    el.textContent = line || '';
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+    setTimeout(() => el.classList.remove('flash'), 700);
+  }
+  if (speak) pokerSpeak(line);
+}
+
+function pokerSpeak(text) {
+  if (!_pokerVoiceOn || !text) return;
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  // Only the table phone (host / center mode) talks — avoids a chorus
+  const p = state.poker;
+  if (p && !p.isHost && !_pokerTableCenter) return;
+
+  _pokerSpeakChain = _pokerSpeakChain.then(() => new Promise(resolve => {
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(String(text));
+      u.rate = 1.02;
+      u.pitch = 1;
+      u.volume = 1;
+      // Prefer a clear English voice when available
+      try {
+        const voices = window.speechSynthesis.getVoices() || [];
+        const en = voices.find(v => /en[-_]US/i.test(v.lang) && /Google|Samantha|Daniel|Alex/i.test(v.name))
+          || voices.find(v => /^en/i.test(v.lang));
+        if (en) u.voice = en;
+      } catch(_) {}
+      u.onend = () => resolve();
+      u.onerror = () => resolve();
+      window.speechSynthesis.speak(u);
+      // Safety resolve if engine stalls
+      setTimeout(resolve, Math.min(8000, 900 + String(text).length * 60));
+    } catch(_) { resolve(); }
+  }));
+}
+
+function applyPokerTableMode() {
+  const screen = document.getElementById('screen-poker-table');
+  if (screen) screen.classList.toggle('table-center', !!_pokerTableCenter);
+  const vBtn = document.getElementById('btn-poker-voice-toggle');
+  const cBtn = document.getElementById('btn-poker-center-toggle');
+  if (vBtn) {
+    vBtn.classList.toggle('on', !!_pokerVoiceOn);
+    vBtn.textContent = _pokerVoiceOn ? '🔊 Voice' : '🔇 Voice';
+  }
+  if (cBtn) {
+    cBtn.classList.toggle('on', !!_pokerTableCenter);
+    cBtn.textContent = _pokerTableCenter ? '✦ Table' : '○ Table';
+  }
+  try {
+    localStorage.setItem('throw_poker_voice', _pokerVoiceOn ? '1' : '0');
+    localStorage.setItem('throw_poker_center', _pokerTableCenter ? '1' : '0');
+  } catch(_) {}
+}
+
+function loadPokerTablePrefs() {
+  try {
+    const v = localStorage.getItem('throw_poker_voice');
+    const c = localStorage.getItem('throw_poker_center');
+    if (v != null) _pokerVoiceOn = v === '1';
+    if (c != null) _pokerTableCenter = c === '1';
+  } catch(_) {}
+  const vSetup = document.getElementById('poker-table-voice');
+  const cSetup = document.getElementById('poker-table-center');
+  if (vSetup) vSetup.checked = _pokerVoiceOn;
+  if (cSetup) cSetup.checked = _pokerTableCenter;
+}
+
+function announcePokerTurn(seat, currentBet) {
+  const name = pokerSeatName(seat);
+  const callAmt = Math.max(0, (currentBet || 0) - (seat.bet || 0));
+  let line;
+  if (callAmt <= 0) line = name + ', your action — check or bet';
+  else line = name + ', your bet — ' + callAmt + ' to call';
+  setPokerAnnounce(line, true);
+}
+
+function announcePokerAction(data, seat) {
+  const name = pokerSeatName(seat);
+  const a = data.action;
+  let line = name + ' ';
+  if (a === 'fold') line += 'folds';
+  else if (a === 'check') line += 'checks';
+  else if (a === 'call') line += 'calls' + (data.amount ? (' ' + data.amount) : '');
+  else if (a === 'raise') line += 'raises to ' + (seat?.bet || data.amount || '');
+  else line += a;
+  setPokerAnnounce(line, true);
+}
+
+function announcePokerStreet(street, pot) {
+  const label = (street || '').toUpperCase();
+  let line = label;
+  if (street === 'flop') line = 'Flop. Pot is ' + pot;
+  else if (street === 'turn') line = 'Turn. Pot is ' + pot;
+  else if (street === 'river') line = 'River. Pot is ' + pot;
+  else if (street === 'showdown') line = 'Showdown. Pot is ' + pot + '. Host picks the winner.';
+  else if (street === 'preflop') line = 'Preflop. Pot is ' + pot;
+  setPokerAnnounce(line, true);
+}
+
+function announcePokerBlinds(seats, sbIdx, bbIdx, sbAmt, bbAmt) {
+  const sb = seats[sbIdx];
+  const bb = seats[bbIdx];
+  const parts = [];
+  if (sb) parts.push(pokerSeatName(sb) + ', small blind ' + sbAmt);
+  if (bb && bbIdx !== sbIdx) parts.push(pokerSeatName(bb) + ', big blind ' + bbAmt);
+  const line = parts.join('. ') + '. Real cards — deal them out.';
+  setPokerAnnounce(line, true);
+}
+
+
 function isMyPokerTurn() {
   const p = state.poker;
   if (!p || !p.seats || !p.seats.length) return false;
@@ -4883,9 +5036,12 @@ async function openPokerSetup() {
   };
 
   showScreen('poker-setup');
+  loadPokerTablePrefs();
   renderPokerSetup();
   enterRoom(roomCode, {}).catch(() => {});
   _subscribePokerTopic(roomCode);
+  // Warm TTS voices (Chrome loads them async)
+  try { window.speechSynthesis && window.speechSynthesis.getVoices(); } catch(_) {}
 }
 
 function renderPokerSetup() {
@@ -5171,10 +5327,19 @@ async function startPokerGame(seats, roomCode) {
     ts: Date.now(),
   });
 
+  // Table prefs from setup checkboxes
+  const vSetup = document.getElementById('poker-table-voice');
+  const cSetup = document.getElementById('poker-table-center');
+  if (vSetup) _pokerVoiceOn = !!vSetup.checked;
+  if (cSetup) _pokerTableCenter = !!cSetup.checked;
+
   if (startBtn) startBtn.textContent = 'Start Game';
   showScreen('poker-table');
+  applyPokerTableMode();
+  announcePokerBlinds(seats, p.sbIdx, p.bbIdx, sbAmt, bbAmt);
   renderPokerTable();
-  pokerNextTurn();
+  // Slight delay so blinds finish speaking before first turn call
+  setTimeout(() => pokerNextTurn(), _pokerVoiceOn ? 2200 : 200);
 }
 
 function pokerNextTurn() {
@@ -5190,6 +5355,7 @@ function pokerNextTurn() {
     pot: p.pot,
     ts: Date.now(),
   });
+  announcePokerTurn(seat, p.currentBet);
   renderPokerTable();
 }
 
@@ -5277,6 +5443,9 @@ function _applyAction(data) {
     });
   }
 
+  // Host table phone calls the action out loud
+  if (p.isHost) announcePokerAction(data, seat);
+
   if (p.isHost) {
     const active = p.seats.filter(s => !s.folded);
     if (active.length <= 1) {
@@ -5340,8 +5509,11 @@ function pokerAdvanceStreet(street) {
     bbIdx: p.bbIdx,
     ts: Date.now(),
   });
+  announcePokerStreet(street, p.pot);
   renderPokerTable();
-  if (street !== 'showdown') pokerNextTurn();
+  if (street !== 'showdown') {
+    setTimeout(() => pokerNextTurn(), _pokerVoiceOn ? 1600 : 150);
+  }
 }
 
 async function pokerSettle(winnerAddr) {
@@ -5393,6 +5565,8 @@ async function pokerSettle(winnerAddr) {
 
   p.street = 'settled';
   moneyRain(8);
+  const winLine = pokerSeatName(winner) + ' wins ' + p.pot;
+  setPokerAnnounce(winLine, true);
   showTxFlash('🏆', '$' + p.pot, (winner.name || 'Winner') + ' wins!');
   renderPokerTable();
   try { localStorage.removeItem('throw_active_bet'); } catch(_) {}
@@ -5401,6 +5575,7 @@ async function pokerSettle(winnerAddr) {
 function renderPokerTable() {
   const p = state.poker;
   if (!p) return;
+  applyPokerTableMode();
 
   const badge = document.getElementById('poker-street-badge');
   if (badge) {
@@ -5673,6 +5848,12 @@ function _handlePokerMessage(data, opts) {
     p.currentSeat = data.seatIdx;
     p.currentBet = data.currentBet;
     p.pot = data.pot;
+    const seat = p.seats[p.currentSeat];
+    if (seat && !p.isHost) {
+      // Player phones show the call on screen; host already spoke
+      const name = pokerSeatName(seat);
+      setPokerAnnounce(name + ', your action', false);
+    }
     renderPokerTable();
     if (data.addr && p.myAddr && data.addr.toLowerCase() === p.myAddr.toLowerCase()) {
       pokerHaptic();
