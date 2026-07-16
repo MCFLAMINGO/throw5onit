@@ -1,4 +1,4 @@
-const VERSION = 'v148';
+const VERSION = 'v149';
 const CACHE   = 'throw-' + VERSION;
 
 const ASSETS = [
@@ -7,6 +7,7 @@ const ASSETS = [
   '/style.css',
   '/app.js',
   '/room.js',
+  '/claim.js',
   '/manifest.json',
   '/qrcode.min.js',
   '/jsqr.min.js',

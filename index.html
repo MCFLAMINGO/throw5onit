@@ -462,8 +462,26 @@
   <div class="throw-ui">
     <div class="screen-label">THROW CASH</div>
 
-    <!-- STEP 1: WHO — friend icons, horizontally scrollable, glow when selected -->
+    <!-- WHO — crew + anyone -->
     <div class="throw-contacts-strip" id="throw-contacts-strip"></div>
+
+    <!-- THROW TO ANYONE — no app required on their side -->
+    <div class="throw-anyone-panel" id="throw-anyone-panel">
+      <div class="throw-anyone-title">Throw at anyone</div>
+      <div class="throw-anyone-sub">They don’t need the app yet — you get a claim link. Money waits in a pot until they tap it.</div>
+      <div class="throw-anyone-row">
+        <input class="throw-anyone-input" id="throw-anyone-input" type="text"
+          placeholder="Name, phone, or email" autocomplete="off" />
+        <button class="throw-anyone-go" id="btn-throw-anyone" type="button">LINK</button>
+      </div>
+      <div class="throw-anyone-actions">
+        <button type="button" class="throw-mini-btn" id="btn-pick-contact">Contacts</button>
+        <button type="button" class="throw-mini-btn" id="btn-claim-qr">QR</button>
+        <button type="button" class="throw-mini-btn" id="btn-nfc-write" title="Write claim to NFC tag">NFC</button>
+        <button type="button" class="throw-mini-btn" id="btn-enable-push" title="Get notified when they claim">Notify</button>
+      </div>
+      <div class="throw-anyone-status" id="throw-anyone-status"></div>
+    </div>
 
     <!-- STEP 2: HOW MUCH — single horizontal scroll row -->
     <div class="throw-amounts-scroll" id="throw-amounts-scroll">
@@ -497,7 +515,7 @@
           <div class="throw-orb-label" id="throw-orb-label">$5</div>
           <div class="throw-orb-hint" id="throw-orb-hint">Hold &amp; flick</div>
         </div>
-        <div class="throw-orb-sub" id="throw-orb-sub">Select friend above · hold · flick to throw</div>
+        <div class="throw-orb-sub" id="throw-orb-sub">Pick a friend — or throw a claim link to anyone</div>
         <button class="btn-tap-throw hidden" id="btn-tap-throw">TAP TO THROW</button>
       </div>
 
@@ -512,7 +530,7 @@
 
     <!-- LAST RESORT: paste wallet address -->
     <div class="throw-addr-fallback" id="throw-addr-row">
-      <div class="throw-addr-label">Don't see them? Paste their address</div>
+      <div class="throw-addr-label">Have their wallet? Paste address</div>
       <div class="throw-addr-row-inner">
         <input class="throw-addr-input" id="throw-addr-input"
           type="text" placeholder="0x…" autocomplete="off" autocorrect="off" spellcheck="false" />
@@ -524,6 +542,34 @@
     <button class="make-it-rain-btn hidden" id="btn-make-it-rain">
       💸 Make It Rain
     </button>
+  </div>
+</div>
+
+<!-- ═══ SCREEN: CLAIM (catch money without prior app) ═══════════════════════ -->
+<div id="screen-claim" class="screen">
+  <div class="claim-ui">
+    <div class="screen-label">MONEY IN THE AIR</div>
+    <div class="claim-orb">
+      <div class="claim-amount" id="claim-amount">$0</div>
+      <div class="claim-from" id="claim-from">Someone threw this at you</div>
+    </div>
+    <p class="claim-copy" id="claim-copy">Tap below to drop it in your pocket. No bank. No login friction.</p>
+    <button class="btn-primary" id="btn-claim-pocket" disabled>Put in my pocket</button>
+    <div class="claim-status" id="claim-status"></div>
+    <button class="btn-ghost" id="btn-claim-later" style="margin-top:12px;font-size:0.85rem;opacity:0.6">Not now</button>
+  </div>
+</div>
+
+<!-- ═══ OVERLAY: claim QR / share result ════════════════════════════════════ -->
+<div id="claim-share-modal" class="modal-overlay hidden">
+  <div class="modal-card claim-share-card">
+    <div class="screen-label">CLAIM LINK READY</div>
+    <div class="claim-share-amt" id="claim-share-amt">$5</div>
+    <canvas id="claim-qr-canvas" width="200" height="200"></canvas>
+    <div class="claim-share-url" id="claim-share-url"></div>
+    <button class="btn-primary" id="btn-claim-share-now">Share link</button>
+    <button class="btn-ghost" id="btn-claim-share-copy" style="margin-top:8px">Copy link</button>
+    <button class="btn-ghost" id="btn-claim-share-close" style="margin-top:8px;opacity:0.55">Done</button>
   </div>
 </div>
 
@@ -885,6 +931,7 @@
 <script src="ethers.bundle.js"></script>
 <script src="mqtt.min.js"></script>
 <script src="room.js"></script>
+<script src="claim.js"></script>
 <div class="throw-toast" id="throw-toast"></div>
 
 <!-- ═══ MY PROFILE MODAL ════════════════════════════════════════════ -->

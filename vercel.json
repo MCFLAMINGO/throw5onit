@@ -2,7 +2,8 @@
   "rewrites": [
     { "source": "/ads", "destination": "/ads.html" },
     { "source": "/advertise", "destination": "/venue-signup.html" },
-    { "source": "/api/ads/click", "destination": "/api/ads" }
+    { "source": "/api/ads/click", "destination": "/api/ads" },
+    { "source": "/c/:claimId", "destination": "/index.html" }
   ],
   "headers": [
     {
