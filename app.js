@@ -289,6 +289,7 @@ let _screenTimer = null;
 function showScreen(id) {
   // Hard-cancel in-flight transitions so rapid taps don't stack glitchy fades
   if (_screenTimer) { clearTimeout(_screenTimer); _screenTimer = null; }
+  if (id !== 'qr') { try { stopFundBalancePoll(); } catch(_) {} }
   document.querySelectorAll('.screen.active, .screen.exit').forEach(el => {
     el.classList.remove('active', 'exit');
   });
@@ -415,6 +416,27 @@ async function initWallet(acc, isNew = false) {
 
   try { subscribeDemoCredits(state.account.address); } catch(_) {}
   try { renderDemoBanner(); } catch(_) {}
+
+  // Brand-new empty pocket → Load for tonight story (skip if we already left wallet)
+  if (isNew && !DEMO_MODE && (state.total || 0) < 1) {
+    setTimeout(() => {
+      if (currentScreen === 'wallet' && (state.total || 0) < 1) {
+        openAddCashScreen();
+        showToast('Load up to $' + CAP_USD + ' for tonight');
+      }
+    }, 650);
+  }
+
+  // Deep link: /?fund=1 opens the fund screen after wallet is ready
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get('fund') === '1') {
+      sp.delete('fund');
+      const q = sp.toString();
+      window.history.replaceState({}, '', window.location.pathname + (q ? '?' + q : ''));
+      setTimeout(() => openAddCashScreen(), 200);
+    }
+  } catch(_) {}
 
   // Restore active bet if host reloaded mid-bet — defer until after DOM is fully ready
   setTimeout(() => {
@@ -1368,6 +1390,16 @@ function renderWalletUI() {
 
   // Render sponsor strips on wallet screen
   try { renderSponsorStrips(); } catch(_) {}
+
+  // Empty / low pocket → push Load for tonight
+  const loadBtn = document.getElementById('btn-load-tonight');
+  if (loadBtn) {
+    const empty = (state.total || 0) < 1;
+    loadBtn.classList.toggle('hidden', !empty || currentScreen !== 'wallet');
+    // Always bind
+    loadBtn.onclick = () => openAddCashScreen();
+  }
+  updateFundBalanceChip();
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -3980,13 +4012,81 @@ async function handleURLParams() {
   }
 }
 
+let _fundPollTimer = null;
+let _fundArrivalToasted = false;
+
+function stopFundBalancePoll() {
+  if (_fundPollTimer) { clearInterval(_fundPollTimer); _fundPollTimer = null; }
+}
+
+function fundChipText(total, cap) {
+  const t = Number(total) || 0;
+  const c = Number(cap) || CAP_USD;
+  const room = Math.max(0, c - t);
+  if (t < 0.01) return 'Empty pocket — load up to $' + c;
+  if (t >= 1) return 'Loaded $' + t.toFixed(2) + ' — ready to throw';
+  return 'On you now: $' + t.toFixed(2) + ' · room for $' + room.toFixed(2);
+}
+
+function buildReceiveShareUrl(origin, name, addr) {
+  return String(origin || '') + '/?addName=' + encodeURIComponent(name || '') +
+    '&addAddr=' + encodeURIComponent(addr || '');
+}
+
+function updateFundBalanceChip() {
+  const chip = document.getElementById('fund-balance-chip');
+  if (!chip) return;
+  chip.textContent = fundChipText(state.total, CAP_USD);
+  const done = document.getElementById('btn-fund-done');
+  if (done) done.classList.toggle('hidden', (state.total || 0) < 1);
+}
+
 function openAddCashScreen() {
   showScreen('qr');
+  _fundArrivalToasted = false;
   const addr = state.account?.address || '';
   renderQR(addr);
   const pk = _storedPK || localStorage.getItem('throw_pk') || 'Not found';
-  document.getElementById('backup-key-display').textContent = pk;
+  const pkEl = document.getElementById('backup-key-display');
+  if (pkEl) pkEl.textContent = pk;
+  updateFundBalanceChip();
+  // Poll while funding so Tempo → THROW deposits show up without manual refresh
+  stopFundBalancePoll();
+  _fundPollTimer = setInterval(async () => {
+    if (currentScreen !== 'qr') { stopFundBalancePoll(); return; }
+    try {
+      if (!DEMO_MODE) await refreshBalances();
+      updateFundBalanceChip();
+      if ((state.total || 0) >= 1 && !_fundArrivalToasted) {
+        _fundArrivalToasted = true;
+        showToast('Cash landed — $' + state.total.toFixed(2) + ' ready');
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          try { navigator.vibrate([40, 40, 80]); } catch(_) {}
+        }
+      }
+    } catch(_) {}
+  }, 4000);
 }
+
+async function shareReceiveLink() {
+  const addr = state.account?.address;
+  if (!addr) return;
+  const name = getHandle() || addr.slice(0, 6);
+  const url = buildReceiveShareUrl(location.origin, name, addr);
+  const text = 'Throw me cash on THROW — I\'m ' + name + '. ' + url;
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Throw me cash', text, url }); return; } catch(e) {
+      if (e && e.name === 'AbortError') return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast('Receive link copied');
+  } catch(_) {
+    showToast(addr);
+  }
+}
+
 
 /* ─ First-launch camera scan ─ */
 let _firstScanStream   = null;
@@ -4229,6 +4329,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (rainBtn) rainBtn.onclick = () => executeMakeItRain();
   document.getElementById('btn-qr-receive').onclick = () => openAddCashScreen();
   document.getElementById('btn-load-cash').onclick  = () => openAddCashScreen();
+  const _loadTonight = document.getElementById('btn-load-tonight');
+  if (_loadTonight) _loadTonight.onclick = () => openAddCashScreen();
 
   // Manual address throw button
   document.getElementById('throw-addr-send').onclick = async () => {
@@ -4402,18 +4504,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     refreshBalances().then(() => showScreen('wallet'));
   };
 
-  /* ── QR screen ── */
-  document.getElementById('qr-back').onclick = () => showScreen('wallet');
-  document.getElementById('btn-copy-addr').onclick = () => {
-    if (!state.account) return;
-    navigator.clipboard?.writeText(state.account.address);
-    document.getElementById('btn-copy-addr').textContent = '1 — ✓ ADDRESS COPIED!';
-    document.getElementById('fund-copied-toast').classList.remove('hidden');
-    setTimeout(() => document.getElementById('btn-copy-addr').textContent = '1 — COPY MY WALLET ADDRESS', 2000);
+  /* ── QR / Load for tonight screen ── */
+  const qrBack = document.getElementById('qr-back');
+  if (qrBack) qrBack.onclick = () => {
+    stopFundBalancePoll();
+    showScreen('wallet');
   };
 
-  document.getElementById('btn-open-tempo').onclick = () => {
-    window.open('https://wallet.tempo.xyz', '_blank');
+  const copyAddrBtn = document.getElementById('btn-copy-addr');
+  if (copyAddrBtn) copyAddrBtn.onclick = () => {
+    if (!state.account) return;
+    navigator.clipboard?.writeText(state.account.address);
+    copyAddrBtn.textContent = '✓ Address copied';
+    const toast = document.getElementById('fund-copied-toast');
+    if (toast) toast.classList.remove('hidden');
+    setTimeout(() => { copyAddrBtn.textContent = 'Copy my address'; }, 2000);
+  };
+
+  const openTempo = document.getElementById('btn-open-tempo');
+  if (openTempo) openTempo.onclick = () => {
+    // Tempo Wallet: fiat onramp + bridge, then user sends to THROW address
+    window.open('https://wallet.tempo.xyz', '_blank', 'noopener');
+  };
+
+  const shareRecv = document.getElementById('btn-share-receive');
+  if (shareRecv) shareRecv.onclick = () => shareReceiveLink();
+
+  const fundDemo = document.getElementById('btn-fund-demo');
+  if (fundDemo) fundDemo.onclick = () => {
+    setDemoMode(true);
+    updateFundBalanceChip();
+    showToast('Demo $50 loaded — throw like cash');
+    setTimeout(() => { stopFundBalancePoll(); showScreen('wallet'); }, 600);
+  };
+
+  const fundDone = document.getElementById('btn-fund-done');
+  if (fundDone) fundDone.onclick = () => {
+    stopFundBalancePoll();
+    showScreen('wallet');
   };
 
   document.getElementById('btn-copy-pk').onclick = () => {

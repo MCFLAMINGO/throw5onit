@@ -367,6 +367,7 @@
       <div class="cap-bar-track"><div class="cap-bar-fill" id="cap-bar-fill"></div></div>
       <span class="cap-label" id="cap-label">$0 of $50</span>
     </div>
+    <button type="button" class="load-tonight-btn hidden" id="btn-load-tonight">Load $50 for tonight</button>
   </div>
 
     </div><!-- /wallet-arena-center -->
@@ -401,7 +402,7 @@
   </div>
 
   <button class="load-btn" id="btn-load-cash">
-    💸 ADD CASH TO WALLET
+    LOAD $50 FOR TONIGHT
   </button>
 
   <!-- DEMO MODE toggle — visible on wallet screen -->
@@ -787,28 +788,61 @@
 <!-- ═══ SCREEN: RECEIVE QR ═══════════════════════════════════════════════════ -->
 <div id="screen-qr" class="screen">
   <button class="back-btn" id="qr-back">← Back</button>
-  <div class="qr-ui">
-    <div class="screen-label">ADD CASH</div>
+  <div class="qr-ui fund-ui">
+    <div class="screen-label">LOAD FOR TONIGHT</div>
+    <p class="fund-hero">How money gets on THROW: a friend throws it, you fund via Tempo, or try demo cash. Cap $50 — like a night wallet.</p>
 
-    <canvas id="qr-canvas" width="160" height="160"></canvas>
-    <div class="qr-address" id="qr-address"></div>
+    <div class="fund-balance-chip" id="fund-balance-chip">Empty pocket — load up to $50</div>
+    <button type="button" class="btn-primary fund-done-btn hidden" id="btn-fund-done">I'm loaded — throw</button>
 
-    <button class="btn-primary fund-step-btn" id="btn-copy-addr">
-      1 — COPY MY WALLET ADDRESS
-    </button>
-    <div class="fund-copied-toast hidden" id="fund-copied-toast">✓ Copied! Now tap below to open Tempo</div>
-
-    <button class="tempo-wallet-btn" id="btn-open-tempo">
-      2 — GO TO TEMPO WALLET
-      <span class="tempo-wallet-sub">Buy USDC.e → Send → Paste your address → Done</span>
-    </button>
-
-    <div class="backup-key-section">
-      <div class="backup-key-label">BACKUP KEY — screenshot this to recover your wallet</div>
-      <div class="backup-key-box" id="backup-key-display">loading...</div>
-      <button class="btn-ghost" id="btn-copy-pk">Copy Backup Key</button>
+    <!-- PATH A: friend (best for unbanked / night energy) -->
+    <div class="fund-card">
+      <div class="fund-card-kicker">Easiest · no bank needed</div>
+      <div class="fund-card-title">Get thrown cash</div>
+      <div class="fund-card-body">A friend with dollars on THROW flicks you cash, or sends a claim link. Show this QR so they can aim.</div>
+      <canvas id="qr-canvas" width="160" height="160"></canvas>
+      <div class="qr-address" id="qr-address"></div>
+      <button class="btn-primary fund-step-btn" id="btn-copy-addr">Copy my address</button>
+      <div class="fund-copied-toast hidden" id="fund-copied-toast">Copied — paste it in Tempo Wallet or share it</div>
+      <button class="btn-ghost fund-share-btn" id="btn-share-receive" style="margin-top:8px;width:100%">Share receive link</button>
     </div>
 
+    <!-- PATH B: Tempo onramp / bridge -->
+    <div class="fund-card fund-card-accent">
+      <div class="fund-card-kicker">Real dollars · Tempo chain</div>
+      <div class="fund-card-title">Fund via Tempo Wallet</div>
+      <div class="fund-card-body">
+        Buy or bridge stablecoins on Tempo, then send them to your THROW address (hot wallet on Tempo).
+        <ol class="fund-olist">
+          <li>Copy your THROW address above</li>
+          <li>Open Tempo Wallet → Add funds (card / bridge)</li>
+          <li>Send <strong>USDC.e</strong> or <strong>pathUSD</strong> here</li>
+          <li>Come back — this screen polls and updates</li>
+        </ol>
+      </div>
+      <button class="tempo-wallet-btn" id="btn-open-tempo">
+        Open Tempo Wallet
+        <span class="tempo-wallet-sub">Buy or bridge → send to THROW → done</span>
+      </button>
+      <div class="fund-bridge-row">
+        <a class="fund-bridge-link" id="btn-bridge-across" href="https://app.across.to/tempo" target="_blank" rel="noopener">Across bridge</a>
+        <a class="fund-bridge-link" id="btn-bridge-relay" href="https://relay.link/bridge/tempo" target="_blank" rel="noopener">Relay bridge</a>
+      </div>
+    </div>
+
+    <!-- PATH C: demo -->
+    <div class="fund-card">
+      <div class="fund-card-kicker">Just trying it</div>
+      <div class="fund-card-title">Demo $50 play money</div>
+      <div class="fund-card-body">No chain. Feel the throw first — turn off demo later for real cash.</div>
+      <button class="btn-ghost" id="btn-fund-demo" style="width:100%">Load demo $50</button>
+    </div>
+
+    <div class="backup-key-section">
+      <div class="backup-key-label">Hot wallet — lose this key, lose the night money</div>
+      <div class="backup-key-box" id="backup-key-display">loading...</div>
+      <button class="btn-ghost" id="btn-copy-pk">Copy backup key</button>
+    </div>
   </div>
 </div>
 
