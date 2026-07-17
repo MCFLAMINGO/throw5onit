@@ -2996,16 +2996,16 @@ a.contact-detail-value { color: var(--accent); text-decoration: none; }
 }
 .dock-tab {
   flex: 1;
-  padding: 0.6rem 0;
+  padding: 0.55rem 4px;
   background: transparent;
   border: none;
   color: var(--text-muted);
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 0.82rem;
+  font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
 }
 .dock-tab.active {
   background: var(--accent);
@@ -4655,4 +4655,53 @@ body:has(.demo-banner:not(.hidden)) .screen {
 @keyframes loadPulse {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.02); }
+}
+
+/* ── Hangout crew mesh ── */
+.hangout-code-label,
+.hangout-members-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-top: 8px;
+}
+.hangout-code {
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  text-align: center;
+  margin: 4px 0 12px;
+}
+#hangout-qr-canvas {
+  display: block;
+  margin: 0 auto 12px;
+  border-radius: 12px;
+  background: #fff;
+}
+.hangout-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  min-height: 36px;
+}
+.hangout-chip {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-1);
+}
+.poker-setup-code {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  margin: 6px 0 0;
+  letter-spacing: 0.04em;
 }
