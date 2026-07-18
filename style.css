@@ -71,25 +71,38 @@ html, body {
 /* ── BACK BUTTON ─────────────────────────────────────────────────────── */
 .back-btn {
   position: absolute;
-  top: calc(var(--safe-top) + 16px);
-  left: 16px;
-  height: 36px;
-  padding: 0 14px;
+  top: calc(var(--safe-top) + 12px);
+  left: 12px;
+  height: 40px;
+  min-width: 88px;
+  padding: 0 16px;
   border-radius: 99px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: rgba(255,255,255,0.8);
-  font-size: 13px;
-  font-weight: 600;
+  background: rgba(12, 18, 16, 0.92);
+  border: 1.5px solid rgba(255,255,255,0.28);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
   font-family: var(--font);
   cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  z-index: 10;
+  z-index: 60;
   letter-spacing: 0.02em;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.45);
+  -webkit-tap-highlight-color: transparent;
 }
-.back-btn:active { background: var(--surface-2); }
+.back-btn:active { background: rgba(30, 40, 36, 0.98); transform: scale(0.97); }
+/* Modals / overlays: keep back top-left and obvious */
+.contact-overlay .back-btn,
+.my-profile-modal .back-btn,
+.points-modal .back-btn {
+  position: absolute;
+  top: calc(var(--safe-top) + 12px);
+  left: 12px;
+  right: auto;
+}
 
 /* ── SCREEN LABEL ────────────────────────────────────────────────────── */
 .screen-label {

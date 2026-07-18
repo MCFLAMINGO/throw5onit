@@ -3708,9 +3708,9 @@ function wireClaimAndAnyoneUI() {
   document.getElementById('btn-claim-share-close')?.addEventListener('click', closeClaimShareModal);
 
   document.getElementById('btn-claim-pocket')?.addEventListener('click', () => executeClaimPocket());
-  document.getElementById('btn-claim-later')?.addEventListener('click', () => {
-    showScreen(state.account ? 'wallet' : 'splash');
-  });
+  const leaveClaim = () => showScreen(state.account ? 'wallet' : 'splash');
+  document.getElementById('btn-claim-later')?.addEventListener('click', leaveClaim);
+  document.getElementById('claim-back')?.addEventListener('click', leaveClaim);
 
   // Handle claim_claimed notifications on credit topic
   // (subscribeDemoCredits already listens — extend via message hook below if needed)
@@ -4717,15 +4717,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('bet-setup-back').onclick = () => showScreen('wallet');
   document.getElementById('btn-start-pot').onclick  = startPot;
 
-  // Poker wiring
+  // Poker wiring — always offer a clear escape to wallet
   const pokerBack = document.getElementById('poker-setup-back');
-  if (pokerBack) pokerBack.onclick = () => { try { leavePokerRoom(); } catch(_) {} showScreen('bet-setup'); };
+  if (pokerBack) pokerBack.onclick = () => {
+    try { leavePokerRoom(); } catch(_) {}
+    showScreen('wallet');
+  };
   const pokerTableBack = document.getElementById('poker-table-back');
   if (pokerTableBack) pokerTableBack.onclick = () => {
-    if (confirm('Leave the table?')) {
-      try { leavePokerRoom(); } catch(_) {}
-      showScreen('wallet');
-    }
+    try { leavePokerRoom(); } catch(_) {}
+    showScreen('wallet');
   };
   const pokerStart = document.getElementById('btn-poker-start');
   if (pokerStart) pokerStart.onclick = () => {
@@ -4759,9 +4760,58 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (vSetup) vSetup.onchange = () => { _pokerVoiceOn = !!vSetup.checked; applyPokerTableMode(); };
   if (cSetup) cSetup.onchange = () => { _pokerTableCenter = !!cSetup.checked; applyPokerTableMode(); };
 
-  /* ── Pot screen ── */
+  /* ── Pot / player-bet / settled — clear exits for demos ── */
   document.getElementById('btn-win').onclick  = () => settleBet(true);
   document.getElementById('btn-lose').onclick = () => settleBet(false);
+
+  const exitToWallet = () => {
+    try { stopHangoutScan(); } catch(_) {}
+    try { stopDockScan(); } catch(_) {}
+    try { stopFundBalancePoll(); } catch(_) {}
+    showScreen('wallet');
+  };
+
+  const potBack = document.getElementById('pot-back');
+  if (potBack) potBack.onclick = () => {
+    // Soft leave — don't trap the host mid-demo
+    state.bet.active = false;
+    try { localStorage.removeItem('throw_active_bet'); } catch(_) {}
+    try { if (typeof leaveRoom === 'function') leaveRoom(); } catch(_) {}
+    exitToWallet();
+  };
+
+  const playerBetBack = document.getElementById('player-bet-back');
+  if (playerBetBack) playerBetBack.onclick = () => {
+    state.bet.active = false;
+    state.bet.joined = false;
+    state.bet.joinedEscrow = null;
+    try { clearPendingBetButton(); } catch(_) {}
+    exitToWallet();
+  };
+
+  const settledBack = document.getElementById('settled-back');
+  if (settledBack) settledBack.onclick = () => {
+    state.bet.active = false;
+    refreshBalances().then(() => exitToWallet()).catch(() => exitToWallet());
+  };
+
+  const merchantBack = document.getElementById('merchant-back');
+  if (merchantBack) merchantBack.onclick = exitToWallet;
+  const merchantSetupBack = document.getElementById('merchant-setup-back');
+  if (merchantSetupBack) merchantSetupBack.onclick = exitToWallet;
+
+  const firstScanBack = document.getElementById('first-scan-back');
+  if (firstScanBack) firstScanBack.onclick = () => {
+    try { stopFirstScan(); } catch(_) {}
+    showScreen('setup');
+  };
+
+  const setupSoloBack = document.getElementById('setup-solo-back');
+  if (setupSoloBack) setupSoloBack.onclick = () => {
+    document.getElementById('setup-solo')?.classList.add('hidden');
+    document.getElementById('setup-choice')?.classList.remove('hidden');
+    document.getElementById('import-area')?.classList.add('hidden');
+  };
 
   /* ── Settled screen ── */
   // Demo mode toggle — checkbox in profile modal

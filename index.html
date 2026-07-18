@@ -153,6 +153,7 @@
 
 <!-- ═══ SCREEN: FIRST SCAN (PWA first launch — scan friend QR to get wallet) ═ -->
 <div id="screen-first-scan" class="screen">
+  <button type="button" class="back-btn" id="first-scan-back">← Back</button>
   <div class="first-scan-inner">
     <div class="first-scan-top">
       <div class="wordmark" style="font-size:1.4rem">THROW</div>
@@ -224,6 +225,7 @@
     </div>
 
     <div id="setup-solo" class="hidden">
+      <button type="button" class="back-btn setup-solo-back" id="setup-solo-back">← Back</button>
       <div class="handle-input-wrap" style="margin-top:16px">
         <input class="handle-input" id="handle-input" type="text" maxlength="6" placeholder="YOUR NAME" autocomplete="off" spellcheck="false" />
         <div class="handle-input-hint">Up to 6 letters — this is how friends see you</div>
@@ -256,6 +258,7 @@
 
 <!-- ═══ SCREEN: MERCHANT SETUP ══════════════════════════════════════════════════ -->
 <div id="screen-merchant-setup" class="screen">
+  <button type="button" class="back-btn" id="merchant-setup-back">← Wallet</button>
   <div class="merchant-setup-inner">
     <h2 class="merchant-setup-title">Set Up Your Register</h2>
     <p class="merchant-setup-sub">Name your business and add items. Prices are in $5 increments.</p>
@@ -291,6 +294,7 @@
 
 <!-- ═══ SCREEN: MERCHANT DASHBOARD ═════════════════════════════════════════════════ -->
 <div id="screen-merchant" class="screen">
+  <button type="button" class="back-btn" id="merchant-back">← Wallet</button>
   <div class="merchant-top-bar">
     <div class="merchant-biz-display" id="merchant-biz-display">YOUR STORE</div>
     <div class="merchant-addr" id="merchant-addr-display">••••0000</div>
@@ -419,7 +423,7 @@
 
 <!-- ═══ SCREEN: DOCK ═══════════════════════════════════════════════════ -->
 <div id="screen-dock" class="screen">
-  <button class="back-btn" id="dock-back">← Back</button>
+  <button type="button" class="back-btn" id="dock-back">← Wallet</button>
   <div class="dock-ui">
     <div class="screen-label">CREW</div>
 
@@ -479,7 +483,7 @@
 
 <!-- ═══ SCREEN: THROW ════════════════════════════════════════════════════════ -->
 <div id="screen-throw" class="screen">
-  <button class="back-btn" id="throw-back">← Back</button>
+  <button type="button" class="back-btn" id="throw-back">← Wallet</button>
   <div class="throw-ui">
     <div class="screen-label">THROW CASH</div>
 
@@ -568,6 +572,7 @@
 
 <!-- ═══ SCREEN: CLAIM (catch money without prior app) ═══════════════════════ -->
 <div id="screen-claim" class="screen">
+  <button type="button" class="back-btn" id="claim-back">← Back</button>
   <div class="claim-ui">
     <div class="screen-label">MONEY IN THE AIR</div>
     <div class="claim-orb">
@@ -596,7 +601,7 @@
 
 <!-- ═══ SCREEN: OPEN BET (HOST SETUP) ═══════════════════════════════════════ -->
 <div id="screen-bet-setup" class="screen">
-  <button class="back-btn" id="bet-setup-back">← Back</button>
+  <button type="button" class="back-btn" id="bet-setup-back">← Wallet</button>
   <div class="bet-setup-ui">
     <div class="screen-label">OPEN A BET</div>
 
@@ -645,7 +650,7 @@
 
 <!-- ═══ SCREEN: POKER TABLE SETUP (HOST) ═════════════════════════════════════ -->
 <div id="screen-poker-setup" class="screen">
-  <button class="back-btn" id="poker-setup-back">← Back</button>
+  <button type="button" class="back-btn" id="poker-setup-back">← Wallet</button>
   <div class="bet-setup-ui">
     <div class="screen-label">TEXAS HOLD'EM</div>
     <div class="fee-notice" style="margin-top:-4px">1) Hangout first so everyone's in your crew. 2) Tap who sits. 3) Put one unmuted phone in the middle — it calls blinds and turns.</div>
@@ -682,7 +687,7 @@
 
 <!-- ═══ SCREEN: POKER TABLE (ALL PLAYERS) ═══════════════════════════════════ -->
 <div id="screen-poker-table" class="screen">
-  <button class="back-btn" id="poker-table-back">← Leave</button>
+  <button type="button" class="back-btn" id="poker-table-back">← Wallet</button>
   <div class="pot-ui poker-table-ui">
     <div class="poker-table-toolbar">
       <button type="button" class="poker-tool-btn" id="btn-poker-voice-toggle" title="Voice on/off">🔊 Voice</button>
@@ -731,6 +736,7 @@
 
 <!-- ═══ SCREEN: ACTIVE POT (HOST) ════════════════════════════════════════════ -->
 <div id="screen-pot" class="screen">
+  <button type="button" class="back-btn" id="pot-back">← Wallet</button>
   <div class="pot-ui">
     <div class="pot-bet-text" id="pot-bet-text"></div>
     <div class="pot-struct-badge" id="pot-struct-badge"></div>
@@ -758,6 +764,7 @@
 
 <!-- ═══ SCREEN: PLAYER IN BET ════════════════════════════════════════════════ -->
 <div id="screen-player-bet" class="screen">
+  <button type="button" class="back-btn" id="player-bet-back">← Wallet</button>
   <div class="player-bet-ui">
     <!-- Host info -->
     <div class="bet-host-row">
@@ -795,6 +802,7 @@
 
 <!-- ═══ SCREEN: SETTLED ══════════════════════════════════════════════════════ -->
 <div id="screen-settled" class="screen">
+  <button type="button" class="back-btn" id="settled-back">← Wallet</button>
   <div class="settled-ui">
     <div class="settled-result" id="settled-result"></div>
     <div class="settled-breakdown" id="settled-breakdown"></div>
@@ -809,7 +817,7 @@
 
 <!-- ═══ SCREEN: RECEIVE QR ═══════════════════════════════════════════════════ -->
 <div id="screen-qr" class="screen">
-  <button class="back-btn" id="qr-back">← Back</button>
+  <button type="button" class="back-btn" id="qr-back">← Wallet</button>
   <div class="qr-ui fund-ui">
     <div class="screen-label">LOAD FOR TONIGHT</div>
     <p class="fund-hero">How money gets on THROW: a friend throws it, you fund via Tempo, or try demo cash. Cap $50 — like a night wallet.</p>
@@ -872,7 +880,7 @@
 <!-- ═══ OVERLAY: TEMPO POINTS ════════════════════════════════════════════ -->
 <div id="points-modal" class="points-modal hidden">
   <div class="points-modal-inner">
-    <button class="back-btn" id="points-modal-close">← Back</button>
+    <button type="button" class="back-btn" id="points-modal-close">← Back</button>
     <div class="points-header">
       <div class="points-lightning">⚡</div>
       <div class="points-title">TEMPO POINTS</div>
@@ -893,7 +901,7 @@
 <!-- ═══ OVERLAY: CONTACT THROW ══════════════════════════════════════════════ -->
 <div id="contact-overlay" class="contact-overlay hidden">
   <div class="contact-overlay-inner">
-    <button class="contact-overlay-close" id="contact-overlay-close">✕</button>
+    <button type="button" class="back-btn contact-overlay-back" id="contact-overlay-close">← Back</button>
     <div class="contact-overlay-avatar" id="contact-overlay-avatar">?</div>
     <div class="contact-overlay-name" id="contact-overlay-name">FRIEND</div>
     <div class="contact-overlay-addr" id="contact-overlay-addr"></div>
@@ -1007,7 +1015,7 @@
 <!-- ═══ MY PROFILE MODAL ════════════════════════════════════════════ -->
 <div id="my-profile-modal" class="my-profile-modal hidden">
   <div class="my-profile-inner">
-    <button class="contact-overlay-close" id="my-profile-close">✕</button>
+    <button type="button" class="back-btn" id="my-profile-close">← Back</button>
     <div class="my-profile-title">MY PROFILE</div>
     <div class="my-profile-avatar-wrap">
       <div class="my-profile-avatar" id="my-profile-avatar"><span id="my-profile-initials">?</span></div>
