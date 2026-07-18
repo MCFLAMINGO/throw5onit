@@ -367,6 +367,7 @@
       <div class="cap-bar-track"><div class="cap-bar-fill" id="cap-bar-fill"></div></div>
       <span class="cap-label" id="cap-label">$0 of $50</span>
     </div>
+    <button type="button" class="load-tonight-btn hidden" id="btn-load-tonight">Load $50 for tonight</button>
   </div>
 
     </div><!-- /wallet-arena-center -->
@@ -401,7 +402,7 @@
   </div>
 
   <button class="load-btn" id="btn-load-cash">
-    💸 ADD CASH TO WALLET
+    LOAD $50 FOR TONIGHT
   </button>
 
   <!-- DEMO MODE toggle — visible on wallet screen -->
@@ -420,24 +421,44 @@
 <div id="screen-dock" class="screen">
   <button class="back-btn" id="dock-back">← Back</button>
   <div class="dock-ui">
-    <div class="screen-label">ADD FRIEND</div>
+    <div class="screen-label">CREW</div>
 
-    <!-- Tab: Friend has no app -->
     <div class="dock-tabs">
-      <button class="dock-tab active" id="dock-tab-new" data-tab="new">No App Yet</button>
-      <button class="dock-tab" id="dock-tab-existing" data-tab="existing">Has App</button>
+      <button class="dock-tab active" id="dock-tab-hangout" data-tab="hangout">Hangout</button>
+      <button class="dock-tab" id="dock-tab-existing" data-tab="existing">Scan One</button>
+      <button class="dock-tab" id="dock-tab-new" data-tab="new">No App Yet</button>
+    </div>
+
+    <!-- Panel: Hangout — one QR, whole table joins -->
+    <div class="dock-panel active" id="dock-panel-hangout">
+      <p class="dock-hint">Everyone's here? Host opens a hangout — friends scan once. Whole crew lands in everyone's phones.</p>
+      <div class="hangout-actions" id="hangout-actions">
+        <button class="btn-primary" id="btn-hangout-host">I'm hosting — show QR</button>
+        <button class="btn-ghost" id="btn-hangout-join" style="width:100%;margin-top:8px">Join with code</button>
+        <button class="btn-ghost" id="btn-hangout-scan" style="width:100%;margin-top:8px">Scan host QR</button>
+      </div>
+      <div class="hangout-live hidden" id="hangout-live">
+        <div class="hangout-code-label">Hangout code</div>
+        <div class="hangout-code" id="hangout-code">----</div>
+        <canvas id="hangout-qr-canvas" width="200" height="200"></canvas>
+        <div class="hangout-members-label">At the table</div>
+        <div class="hangout-members" id="hangout-members"></div>
+        <button class="btn-ghost" id="btn-hangout-share" style="width:100%;margin-top:10px">Share link</button>
+        <button class="btn-ghost" id="btn-hangout-done" style="width:100%;margin-top:8px">Done — back to wallet</button>
+      </div>
+      <div class="dock-scan-status" id="hangout-scan-status"></div>
+      <video class="dock-scanner hidden" id="hangout-scanner" autoplay playsinline></video>
+      <canvas class="dock-scanner-canvas hidden" id="hangout-scanner-canvas"></canvas>
     </div>
 
     <!-- Panel: No app — gift a wallet -->
-    <div class="dock-panel active" id="dock-panel-new">
-      <!-- QR shown at top once generated -->
+    <div class="dock-panel" id="dock-panel-new">
       <div class="dock-gift-qr hidden" id="dock-gift-qr">
         <div class="dock-gift-label">Show this to <span id="dock-gift-name">them</span></div>
         <canvas id="dock-gift-canvas" width="240" height="240"></canvas>
         <div class="dock-gift-hint">They scan → tap “A friend invited me” → scan again → wallet ready</div>
         <div class="dock-gift-addr" id="dock-gift-addr"></div>
       </div>
-      <!-- Input + button shown before QR is generated -->
       <div id="dock-gift-form">
         <p class="dock-hint">Enter their name — we'll create a wallet for them. They scan your QR and they're in.</p>
         <input class="handle-input" id="dock-friend-name" type="text" maxlength="6" placeholder="THEIR NAME" autocomplete="off" />
@@ -445,9 +466,9 @@
       </div>
     </div>
 
-    <!-- Panel: Has app — scan their CATCH QR -->
+    <!-- Panel: Has app — scan one friend's receive / fund QR -->
     <div class="dock-panel" id="dock-panel-existing">
-      <p class="dock-hint">Ask them to open THROW and tap CATCH. Then scan their QR below.</p>
+      <p class="dock-hint">Ask them to open Load for tonight (QR). Scan it — you both add each other.</p>
       <button class="btn-primary" id="btn-dock-scan">Scan Their QR</button>
       <video class="dock-scanner hidden" id="dock-scanner" autoplay playsinline></video>
       <canvas class="dock-scanner-canvas hidden" id="dock-scanner-canvas"></canvas>
@@ -627,7 +648,8 @@
   <button class="back-btn" id="poker-setup-back">← Back</button>
   <div class="bet-setup-ui">
     <div class="screen-label">TEXAS HOLD'EM</div>
-    <div class="fee-notice" style="margin-top:-4px">Real cards. Phone in the middle runs blinds, turns, and the pot — seat crew clockwise from dealer.</div>
+    <div class="fee-notice" style="margin-top:-4px">1) Hangout first so everyone's in your crew. 2) Tap who sits. 3) Put one unmuted phone in the middle — it calls blinds and turns.</div>
+    <div class="poker-setup-code" id="poker-setup-code">Table —</div>
 
     <div class="pot-arena" style="height:300px;margin:16px 0">
       <div class="pot-orb" id="poker-setup-orb">
@@ -637,8 +659,9 @@
       <div class="pot-orbit" id="poker-setup-orbit"></div>
     </div>
 
-    <div class="field-label" style="margin-top:8px">YOUR CREW</div>
+    <div class="field-label" style="margin-top:8px">SEAT THE TABLE</div>
     <div id="poker-crew-row" style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;padding:8px 0;min-height:60px"></div>
+    <button type="button" class="btn-ghost" id="btn-poker-seat-all" style="width:100%;margin-bottom:8px">Seat everyone in crew</button>
 
     <label style="display:flex;align-items:center;gap:8px;justify-content:center;margin:10px 0;font-size:13px;opacity:0.85">
       <input type="checkbox" id="poker-join-self" checked />
@@ -653,7 +676,7 @@
       Center-of-table display (put this phone in the middle)
     </label>
 
-    <button class="btn-primary" id="btn-poker-start" disabled>Start Game</button>
+    <button class="btn-primary" id="btn-poker-start" disabled>Deal — start the hand</button>
   </div>
 </div>
 
@@ -787,28 +810,61 @@
 <!-- ═══ SCREEN: RECEIVE QR ═══════════════════════════════════════════════════ -->
 <div id="screen-qr" class="screen">
   <button class="back-btn" id="qr-back">← Back</button>
-  <div class="qr-ui">
-    <div class="screen-label">ADD CASH</div>
+  <div class="qr-ui fund-ui">
+    <div class="screen-label">LOAD FOR TONIGHT</div>
+    <p class="fund-hero">How money gets on THROW: a friend throws it, you fund via Tempo, or try demo cash. Cap $50 — like a night wallet.</p>
 
-    <canvas id="qr-canvas" width="160" height="160"></canvas>
-    <div class="qr-address" id="qr-address"></div>
+    <div class="fund-balance-chip" id="fund-balance-chip">Empty pocket — load up to $50</div>
+    <button type="button" class="btn-primary fund-done-btn hidden" id="btn-fund-done">I'm loaded — throw</button>
 
-    <button class="btn-primary fund-step-btn" id="btn-copy-addr">
-      1 — COPY MY WALLET ADDRESS
-    </button>
-    <div class="fund-copied-toast hidden" id="fund-copied-toast">✓ Copied! Now tap below to open Tempo</div>
-
-    <button class="tempo-wallet-btn" id="btn-open-tempo">
-      2 — GO TO TEMPO WALLET
-      <span class="tempo-wallet-sub">Buy USDC.e → Send → Paste your address → Done</span>
-    </button>
-
-    <div class="backup-key-section">
-      <div class="backup-key-label">BACKUP KEY — screenshot this to recover your wallet</div>
-      <div class="backup-key-box" id="backup-key-display">loading...</div>
-      <button class="btn-ghost" id="btn-copy-pk">Copy Backup Key</button>
+    <!-- PATH A: friend (best for unbanked / night energy) -->
+    <div class="fund-card">
+      <div class="fund-card-kicker">Easiest · no bank needed</div>
+      <div class="fund-card-title">Get thrown cash</div>
+      <div class="fund-card-body">A friend with dollars on THROW flicks you cash, or sends a claim link. Show this QR so they can aim.</div>
+      <canvas id="qr-canvas" width="160" height="160"></canvas>
+      <div class="qr-address" id="qr-address"></div>
+      <button class="btn-primary fund-step-btn" id="btn-copy-addr">Copy my address</button>
+      <div class="fund-copied-toast hidden" id="fund-copied-toast">Copied — paste it in Tempo Wallet or share it</div>
+      <button class="btn-ghost fund-share-btn" id="btn-share-receive" style="margin-top:8px;width:100%">Share receive link</button>
     </div>
 
+    <!-- PATH B: Tempo onramp / bridge -->
+    <div class="fund-card fund-card-accent">
+      <div class="fund-card-kicker">Real dollars · Tempo chain</div>
+      <div class="fund-card-title">Fund via Tempo Wallet</div>
+      <div class="fund-card-body">
+        Buy or bridge stablecoins on Tempo, then send them to your THROW address (hot wallet on Tempo).
+        <ol class="fund-olist">
+          <li>Copy your THROW address above</li>
+          <li>Open Tempo Wallet → Add funds (card / bridge)</li>
+          <li>Send <strong>USDC.e</strong> or <strong>pathUSD</strong> here</li>
+          <li>Come back — this screen polls and updates</li>
+        </ol>
+      </div>
+      <button class="tempo-wallet-btn" id="btn-open-tempo">
+        Open Tempo Wallet
+        <span class="tempo-wallet-sub">Buy or bridge → send to THROW → done</span>
+      </button>
+      <div class="fund-bridge-row">
+        <a class="fund-bridge-link" id="btn-bridge-across" href="https://app.across.to/tempo" target="_blank" rel="noopener">Across bridge</a>
+        <a class="fund-bridge-link" id="btn-bridge-relay" href="https://relay.link/bridge/tempo" target="_blank" rel="noopener">Relay bridge</a>
+      </div>
+    </div>
+
+    <!-- PATH C: demo -->
+    <div class="fund-card">
+      <div class="fund-card-kicker">Just trying it</div>
+      <div class="fund-card-title">Demo $50 play money</div>
+      <div class="fund-card-body">No chain. Feel the throw first — turn off demo later for real cash.</div>
+      <button class="btn-ghost" id="btn-fund-demo" style="width:100%">Load demo $50</button>
+    </div>
+
+    <div class="backup-key-section">
+      <div class="backup-key-label">Hot wallet — lose this key, lose the night money</div>
+      <div class="backup-key-box" id="backup-key-display">loading...</div>
+      <button class="btn-ghost" id="btn-copy-pk">Copy backup key</button>
+    </div>
   </div>
 </div>
 

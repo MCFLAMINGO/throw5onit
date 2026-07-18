@@ -19,6 +19,10 @@ const room = {
   onBetOpen: null,       // callback(betData) — fired on player phones when host opens a bet
   onBetJoin: null,       // callback({addr, name, amount, side}) — fired on host when player throws in
   onBetSettled: null,    // callback({hostWon, pot, structure}) — fired on player phones at settlement
+  onCrewRoster: null,    // callback({members, hostAddr, roomCode}) — hangout contact mesh
+  onCrewJoin: null,      // callback({addr, name}) — someone sat down at the hangout
+  crewMembers: {},       // addr -> { addr, name }
+  crewHostAddr: null,
 };
 
 /* ── Generate a random 4-digit room code ── */
@@ -35,6 +39,8 @@ async function joinRoom(code, myAddr, myName, onPeers, onThrowReceived, callback
     if (callbacks.onBetOpen)    room.onBetOpen    = callbacks.onBetOpen;
     if (callbacks.onBetJoin)    room.onBetJoin    = callbacks.onBetJoin;
     if (callbacks.onBetSettled) room.onBetSettled = callbacks.onBetSettled;
+    if (callbacks.onCrewRoster) room.onCrewRoster = callbacks.onCrewRoster;
+    if (callbacks.onCrewJoin)   room.onCrewJoin   = callbacks.onCrewJoin;
   }
 
   return new Promise((resolve, reject) => {
@@ -85,6 +91,34 @@ async function joinRoom(code, myAddr, myName, onPeers, onThrowReceived, callback
             room.onBetSettled && room.onBetSettled(data);
           }
         }
+
+        if (subtopic === 'crew') {
+          if (data.event === 'crew_roster' && Array.isArray(data.members)) {
+            room.crewMembers = {};
+            data.members.forEach(m => {
+              if (m && m.addr) room.crewMembers[m.addr.toLowerCase()] = {
+                addr: m.addr,
+                name: m.name || m.addr.slice(0, 6),
+              };
+            });
+            room.crewHostAddr = data.hostAddr || room.crewHostAddr;
+            room.onCrewRoster && room.onCrewRoster({
+              members: Object.values(room.crewMembers),
+              hostAddr: data.hostAddr,
+              roomCode: code,
+            });
+          }
+          if (data.event === 'crew_join' && data.addr && data.addr !== myAddr) {
+            room.crewMembers[data.addr.toLowerCase()] = {
+              addr: data.addr,
+              name: data.name || data.addr.slice(0, 6),
+            };
+            room.onCrewJoin && room.onCrewJoin({
+              addr: data.addr,
+              name: data.name || data.addr.slice(0, 6),
+            });
+          }
+        }
       } catch (_) {}
     });
 
@@ -101,6 +135,43 @@ function leaveRoom() {
   if (room.client) { room.client.end(); room.client = null; }
   room.code  = null;
   room.peers = {};
+  room.crewMembers = {};
+  room.crewHostAddr = null;
+}
+
+/* ── Hangout crew mesh — one QR, everyone becomes contacts ── */
+function publishCrewJoin(addr, name) {
+  if (!room.client || !room.code) return;
+  const msg = JSON.stringify({
+    event: 'crew_join',
+    addr,
+    name: name || addr.slice(0, 6),
+    ts: Date.now(),
+  });
+  room.client.publish(ROOM_PREFIX + room.code + '/crew', msg, { qos: 1 });
+}
+
+function publishCrewRoster(hostAddr, members) {
+  if (!room.client || !room.code) return;
+  const list = (members || []).map(m => ({
+    addr: m.addr,
+    name: m.name || m.addr.slice(0, 6),
+  }));
+  room.crewMembers = {};
+  list.forEach(m => { room.crewMembers[m.addr.toLowerCase()] = m; });
+  room.crewHostAddr = hostAddr;
+  const msg = JSON.stringify({
+    event: 'crew_roster',
+    hostAddr,
+    members: list,
+    roomCode: room.code,
+    ts: Date.now(),
+  });
+  room.client.publish(ROOM_PREFIX + room.code + '/crew', msg, { qos: 1, retain: true });
+}
+
+function getCrewMembers() {
+  return Object.values(room.crewMembers || {});
 }
 
 /* ── Broadcast our heading every 1s ── */

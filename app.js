@@ -69,11 +69,54 @@ function setDemoMode(on) {
   try { localStorage.setItem('throw_demo_mode', on ? 'true' : 'false'); } catch(_) {}
   renderDemoBanner();
   if (on) {
-    state.pathUSD = DEMO_START_BALANCE;
+    // Keep existing play balance if present — don't wipe a night mid-session
+    let saved = 0;
+    try { saved = parseFloat(localStorage.getItem('throw_demo_balance') || '0'); } catch(_) {}
+    state.pathUSD = saved > 0.001 ? saved : DEMO_START_BALANCE;
     state.usdc    = 0;
-    state.total   = DEMO_START_BALANCE;
+    state.total   = state.pathUSD;
+    try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
     renderWalletUI();
   }
+}
+
+/* ── Demo credit idempotency (stops $5 → $69 / $100 multi-credit) ── */
+const _seenCreditKeys = new Set();
+const SEEN_CREDIT_MAX = 100;
+
+function creditDedupeKey(data) {
+  if (!data) return '';
+  if (data.hash) return 'h:' + String(data.hash).toLowerCase();
+  if (data.throwId) return 't:' + String(data.throwId);
+  const from = (data.from || '').toLowerCase();
+  const amt = Number(data.amount) || 0;
+  const bucket = Math.floor((Number(data.ts) || Date.now()) / 8000);
+  return 'f:' + from + ':' + amt.toFixed(4) + ':' + bucket;
+}
+
+function markCreditSeen(key) {
+  if (!key) return false;
+  if (_seenCreditKeys.has(key)) return false;
+  _seenCreditKeys.add(key);
+  if (_seenCreditKeys.size > SEEN_CREDIT_MAX) {
+    const first = _seenCreditKeys.values().next().value;
+    _seenCreditKeys.delete(first);
+  }
+  return true;
+}
+
+/** Apply one demo credit. Returns true if balance changed. */
+function applyDemoCreditOnce(amount, meta) {
+  if (!DEMO_MODE) return false;
+  const amt = Number(amount) || 0;
+  if (amt <= 0) return false;
+  const key = creditDedupeKey(meta || { amount: amt, ts: Date.now() });
+  if (!markCreditSeen(key)) return false;
+  state.total = Math.round((state.total + amt) * 1e6) / 1e6;
+  state.pathUSD = state.total;
+  try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
+  renderWalletUI();
+  return true;
 }
 
 function renderDemoBanner() {
@@ -128,24 +171,35 @@ async function demoSendStablecoin(toAddr, usdAmount) {
     room.client.publish('throw5/room/' + room.code + '/demo', msg, { qos: 0 });
   }
   // Also broadcast globally so receiver sees credit even without shared room
-  _demoCreditGlobal(toAddr, net, hash);
+  _demoCreditGlobal(toAddr, net, hash, state.pendingThrowId || null);
   state.txHistory.unshift({ type: 'sent', amount: usdAmount, to: toAddr, hash, ts: Date.now() });
   return hash;
 }
 
-function _demoCreditGlobal(toAddr, amount, hash) {
-  // Publish on a per-address topic so receiver always gets credited
+function _demoCreditGlobal(toAddr, amount, hash, throwId) {
+  // Publish on a per-address topic so receiver always gets credited.
+  // Do NOT retain — retained credits re-fire on reconnect and inflate balances.
   try {
     const clientId = 'throw_dcr_' + Math.random().toString(36).slice(2,8);
     const c = mqtt.connect(MQTT_BROKER, { clientId, clean: true, connectTimeout: 6000, reconnectPeriod: 0 });
     c.on('connect', () => {
-      const msg = JSON.stringify({ event: 'demo_credit', to: toAddr, from: state.account?.address, amount, hash, ts: Date.now() });
-      // QoS 1 + retain so late-connecting devices still get the credit
-      c.publish('throw5/wallet/' + toAddr.toLowerCase() + '/credit', msg, { qos: 1, retain: true }, () => {
+      const msg = JSON.stringify({
+        event: 'demo_credit',
+        to: toAddr,
+        from: state.account?.address,
+        fromName: getHandle() || (state.account?.address?.slice(0, 6) || ''),
+        amount,
+        hash,
+        throwId: throwId || null,
+        demo: true,
+        ts: Date.now(),
+      });
+      c.publish('throw5/wallet/' + toAddr.toLowerCase() + '/credit', msg, { qos: 1 }, () => {
         try { c.end(true); } catch(_) {}
       });
     });
     c.on('error', () => { try { c.end(true); } catch(_) {} });
+    setTimeout(() => { try { c.end(true); } catch(_) {} }, 8000);
   } catch(_) {}
 }
 
@@ -163,19 +217,23 @@ function _notifyContactAdded(toAddr, myAddr, myName) {
   } catch(_) {}
 }
 
-/* ── Notify receiver — relay (primary) + MQTT (parallel) ── */
-function notifyReceiverDirect(toAddr, amount) {
+/* ── Notify receiver after money actually moved (live = refresh cue; never demo balance) ── */
+function notifyReceiverDirect(toAddr, amount, opts) {
   if (!toAddr || !amount) return;
+  opts = opts || {};
+  // Demo already credits via demo_credit — only ping UI for live chain throws
+  if (DEMO_MODE) return;
   const payload = {
-    event: 'proximity_throw',
+    event: 'throw_credit',
     to: toAddr,
     from: state.account?.address,
     fromName: getHandle() || (state.account?.address?.slice(0,6) || ''),
     amount,
-    throwId: Date.now().toString(36),
+    throwId: opts.throwId || state.pendingThrowId || Date.now().toString(36),
+    hash: opts.hash || null,
+    demo: false,
     ts: Date.now(),
   };
-  // Fire both simultaneously — relay is guaranteed, MQTT is faster if it works
   relayThrow(payload);
   try {
     const c = mqtt.connect(MQTT_BROKER, { clientId: 'nr_' + Math.random().toString(36).slice(2,7), clean: true, connectTimeout: 4000, reconnectPeriod: 0 });
@@ -289,6 +347,7 @@ let _screenTimer = null;
 function showScreen(id) {
   // Hard-cancel in-flight transitions so rapid taps don't stack glitchy fades
   if (_screenTimer) { clearTimeout(_screenTimer); _screenTimer = null; }
+  if (id !== 'qr') { try { stopFundBalancePoll(); } catch(_) {} }
   document.querySelectorAll('.screen.active, .screen.exit').forEach(el => {
     el.classList.remove('active', 'exit');
   });
@@ -415,6 +474,27 @@ async function initWallet(acc, isNew = false) {
 
   try { subscribeDemoCredits(state.account.address); } catch(_) {}
   try { renderDemoBanner(); } catch(_) {}
+
+  // Brand-new empty pocket → Load for tonight story (skip if we already left wallet)
+  if (isNew && !DEMO_MODE && (state.total || 0) < 1) {
+    setTimeout(() => {
+      if (currentScreen === 'wallet' && (state.total || 0) < 1) {
+        openAddCashScreen();
+        showToast('Load up to $' + CAP_USD + ' for tonight');
+      }
+    }, 650);
+  }
+
+  // Deep link: /?fund=1 opens the fund screen after wallet is ready
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get('fund') === '1') {
+      sp.delete('fund');
+      const q = sp.toString();
+      window.history.replaceState({}, '', window.location.pathname + (q ? '?' + q : ''));
+      setTimeout(() => openAddCashScreen(), 200);
+    }
+  } catch(_) {}
 
   // Restore active bet if host reloaded mid-bet — defer until after DOM is fully ready
   setTimeout(() => {
@@ -575,44 +655,61 @@ function subscribeDemoCredits(myAddr) {
       const myAddrLc = myAddr.toLowerCase();
       const toMatch  = data.to && data.to.toLowerCase() === myAddrLc;
 
-      // Demo credit — credit balance directly (never blocked by catchState.fired)
-      if ((data.event === 'demo_credit' || data.event === 'proximity_throw') && toMatch) {
+      // Demo credit — SINGLE source of truth for play-money balance (deduped by hash/throwId)
+      if (data.event === 'demo_credit' && toMatch) {
         const amt = parseFloat(data.amount) || 0;
-        const fromName = data.fromName || (data.from ? data.from.slice(0,6) : 'Someone');
+        const fromName = data.fromName || (data.from ? data.from.slice(0, 6) : 'Someone');
         if (amt > 0) {
-          // Always credit the balance regardless of catch screen state
-          if (DEMO_MODE) {
-            state.total   += amt;
-            state.pathUSD  = state.total;
-            try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
-            renderWalletUI();
-            // Clear the retained message so it doesn't re-credit on next app open
-            try { c.publish('throw5/wallet/' + myAddrLc + '/credit', '', { qos: 1, retain: true }); } catch(_) {}
+          const credited = applyDemoCreditOnce(amt, data);
+          // Clear any legacy retained credit so reconnects don't re-deliver junk
+          try { c.publish('throw5/wallet/' + myAddrLc + '/credit', '', { qos: 1, retain: true }); } catch(_) {}
+          if (credited) {
+            showTxFlash('💸', '$' + amt.toFixed(2), fromName + ' threw you $' + amt.toFixed(2) + '!');
+            moneyRain();
+            setTimeout(() => hideTxFlash(), 3000);
+            state.txHistory.unshift({ type: 'received', amount: amt, from: fromName, ts: Date.now() });
           }
-          // Show flash notification
-          showTxFlash('💸', '$' + amt.toFixed(2), fromName + ' threw you $' + amt.toFixed(2) + '!');
-          moneyRain();
-          setTimeout(() => hideTxFlash(), 3000);
-          state.txHistory.unshift({ type: 'received', amount: amt, from: fromName, ts: Date.now() });
-          // Reset bet state + THROW button so player can bet again
           if (state.bet?.active && !state.bet?.isHost) {
             state.bet.active = false;
             state.bet.joined = false;
             state.bet.joinedEscrow = null;
             clearPendingBetButton();
           }
-          // If catch window is active, also complete it
+          // Catch UI only — never credit again inside onCatchHit
           if (catchState.active && !catchState.fired) {
-            onCatchHit(amt, fromName, data.throwId || null, data.event);
+            onCatchHit(amt, fromName, data.throwId || data.hash || null, 'demo_credit', { skipCredit: true });
           }
         }
       }
-      // Real throw notification
+      // Proximity ping — UI / catch only. Never mutates demo balance (that caused $69/$100).
+      if (data.event === 'proximity_throw' && toMatch) {
+        const amt = parseFloat(data.amount) || 0;
+        const fromName = data.fromName || (data.from ? data.from.slice(0, 6) : 'Someone');
+        const pingKey = creditDedupeKey({ throwId: data.throwId, hash: data.hash, from: data.from, amount: amt, ts: data.ts });
+        if (amt > 0 && markCreditSeen('ping:' + pingKey)) {
+          showTxFlash('💸', '$' + amt.toFixed(2), fromName + ' threw you $' + amt.toFixed(2) + '!');
+          moneyRain();
+          setTimeout(() => hideTxFlash(), 2800);
+          if (!DEMO_MODE) refreshBalances();
+        }
+        if (catchState.active && !catchState.fired) {
+          onCatchHit(amt, fromName, data.throwId || null, 'proximity_throw', { skipCredit: true });
+        }
+      }
+      // Live throw landed — refresh chain balance (published after successful send)
       if (data.event === 'throw_credit' && toMatch) {
-        const fromName = data.fromName || (data.from ? data.from.slice(0,6) : 'Someone');
-        showTxFlash('💸', '$' + data.amount, fromName + ' threw you $' + data.amount + '!');
-        setTimeout(() => hideTxFlash(), 3500);
+        const amt = parseFloat(data.amount) || 0;
+        const fromName = data.fromName || (data.from ? data.from.slice(0, 6) : 'Someone');
+        const key = creditDedupeKey(data);
+        if (markCreditSeen('live:' + key)) {
+          showTxFlash('💸', '$' + amt.toFixed(2), fromName + ' threw you $' + amt.toFixed(2) + '!');
+          setTimeout(() => hideTxFlash(), 3500);
+          moneyRain();
+        }
         refreshBalances();
+        if (catchState.active && !catchState.fired) {
+          onCatchHit(amt, fromName, data.throwId || data.hash || null, 'throw_credit', { skipCredit: true });
+        }
       }
       // Someone claimed a throw you sent
       if (data.event === 'claim_claimed' && toMatch) {
@@ -1368,6 +1465,16 @@ function renderWalletUI() {
 
   // Render sponsor strips on wallet screen
   try { renderSponsorStrips(); } catch(_) {}
+
+  // Empty / low pocket → push Load for tonight
+  const loadBtn = document.getElementById('btn-load-tonight');
+  if (loadBtn) {
+    const empty = (state.total || 0) < 1;
+    loadBtn.classList.toggle('hidden', !empty || currentScreen !== 'wallet');
+    // Always bind
+    loadBtn.onclick = () => openAddCashScreen();
+  }
+  updateFundBalanceChip();
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -1405,9 +1512,11 @@ async function sendStablecoin(toAddr, usdAmount) {
     tokenAddr = PATHUSD_ADDR;
   } else if ((state.pathUSD + state.usdc) >= netAmount) {
     // split: send USDC.e first, then pathUSD for remainder
+    // Snapshot usdc BEFORE transfer — refreshBalances would zero it and overpay
     if (state.usdc > 0.001) {
-      await _sendToken(USDC_ADDR, 6, toAddr, state.usdc);
-      const remainder = netAmount - state.usdc;
+      const usdcPart = state.usdc;
+      await _sendToken(USDC_ADDR, 6, toAddr, usdcPart);
+      const remainder = Math.round((netAmount - usdcPart) * 1e6) / 1e6;
       if (remainder > 0.001) await _sendToken(PATHUSD_ADDR, 6, toAddr, remainder);
       return;
     } else {
@@ -1440,8 +1549,9 @@ async function sendEscrowDeposit(escrowAddr, usdAmount) {
     tokenAddr = PATHUSD_ADDR;
   } else if ((state.pathUSD + state.usdc) >= usdAmount) {
     if (state.usdc > 0.001) {
-      await _sendToken(USDC_ADDR, 6, escrowAddr, state.usdc);
-      const remainder = usdAmount - state.usdc;
+      const usdcPart = state.usdc;
+      await _sendToken(USDC_ADDR, 6, escrowAddr, usdcPart);
+      const remainder = Math.round((usdAmount - usdcPart) * 1e6) / 1e6;
       if (remainder > 0.001) await _sendToken(PATHUSD_ADDR, 6, escrowAddr, remainder);
       return;
     }
@@ -1811,8 +1921,14 @@ bc.onmessage = (e) => {
 
 async function enterRoom(code, betCallbacks) {
   const addr = state.account.address;
-  const name = addr.slice(2, 6).toUpperCase(); // e.g. "A3F2"
+  const name = (typeof getHandle === 'function' && getHandle()
+    ? getHandle()
+    : addr.slice(2, 6)).toUpperCase().slice(0, 6);
   try {
+    // Switching hangouts / tables — drop prior MQTT room cleanly
+    if (typeof leaveRoom === 'function' && room.code && room.code !== code) {
+      try { leaveRoom(); } catch(_) {}
+    }
     await joinRoom(code, addr, name,
       // onPeers
       (peers) => {
@@ -1825,7 +1941,7 @@ async function enterRoom(code, betCallbacks) {
         showTxFlash('💸', '$' + data.amount, 'Incoming throw from ' + data.from.slice(0,6));
         refreshBalances();
       },
-      // bet callbacks — { onBetOpen, onBetJoin, onBetSettled }
+      // bet + hangout callbacks
       betCallbacks || {}
     );
     state.inRoom   = true;
@@ -1908,80 +2024,40 @@ async function executeProximityThrow(target) {
 
   _throwInFlight = true;
   // Generate unique throwId — dedup guard so money only moves once
-  const throwId = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+  const throwId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   state.pendingThrowId = throwId;
 
   const amount = state.throwAmount;
   const fromAddr = state.account.address;
-  const fromName = getHandle() || fromAddr.slice(0,6);
+  const fromName = getHandle() || fromAddr.slice(0, 6);
 
-  // Build the throw payload published to all channels
-  const payload = {
-    event: 'proximity_throw',
-    throwId,
-    from: fromAddr,
-    fromName,
-    to: target.addr,
-    amount,
-    ts: Date.now(),
-  };
-
-  // Visual: show charging flash
+  // Visual: show charging flash — do NOT notify peer until money actually moves
   showTxFlash('🤌', '$' + amount, 'Throwing to ' + target.name + '…');
   playThrowAnimation();
 
-  // Fire all 3 channels simultaneously — don't await, let them race
-  // Channel 1: MQTT direct to receiver's wallet topic
-  const mqttPromise = new Promise(resolve => {
-    try {
-      const topic = 'throw5/wallet/' + target.addr.toLowerCase() + '/credit';
-      const msg = JSON.stringify({ ...payload, channel: 'mqtt' });
-      const clientId = 'throw_px_' + Math.random().toString(36).slice(2,8);
-      const c = mqtt.connect(MQTT_BROKER, { clientId, clean: true, connectTimeout: 5000, reconnectPeriod: 0 });
-      c.on('connect', () => {
-        c.publish(topic, msg, { qos: 1 }, () => { try { c.end(true); } catch(_) {} });
-        resolve('mqtt');
-      });
-      c.on('error', () => resolve('mqtt_err'));
-      setTimeout(() => resolve('mqtt_timeout'), 4000);
-    } catch(e) { resolve('mqtt_err'); }
-  });
+  // Sonic is ambience only — never credits balance by itself
+  try { sonicSendThrow(amount, throwId).catch(() => {}); } catch(_) {}
 
-  // Channel 2: Sonic — encode throwId + amount as ultrasonic burst
-  const sonicPromise = (async () => {
-    try {
-      await sonicSendThrow(amount, throwId);
-      return 'sonic';
-    } catch(e) { return 'sonic_err'; }
-  })();
-
-  // Channel 3: BroadcastChannel (same-device / demo)
-  bcSend('proximity_throw', payload);
-
-  // Execute all channels in parallel
-  await Promise.all([mqttPromise, sonicPromise]);
-
-  // Now execute the actual blockchain transaction
   try {
     const hash = await sendStablecoin(target.addr, amount);
-    notifyReceiverDirect(target.addr, amount);
+    // Live: tell receiver to refresh. Demo: demo_credit already published inside send.
+    notifyReceiverDirect(target.addr, amount, { throwId, hash });
     if (state.inRoom) publishThrow(fromAddr, target.addr, amount);
     touchContact(target.addr);
     points.add(amount);
     showTxFlash('\u2705', '$' + amount, 'Thrown to ' + target.name + '!');
-    // Log throw-coincidence if a paid sponsor is active
     if (_activeSponsor?.paid) logSponsorEvent('throw_coincidence', _activeSponsor);
-    // Log venue throw for revenue share accounting
     logVenueThrow(amount);
     showThrowSponsorCredit(_activeSponsor?.name || null);
     await refreshBalances();
     setTimeout(() => { hideTxFlash(); showScreen('wallet'); }, 1800);
-  } catch(e) {
+  } catch (e) {
     hideTxFlash();
     showToast('Throw failed: ' + (e.message || String(e)));
     showScreen('wallet');
   } finally {
     _throwInFlight = false;
+    state.pendingThrowId = null;
   }
 }
 
@@ -2070,7 +2146,7 @@ function setupThrowScreen() {
       if (orbLabel) orbLabel.textContent = '$' + a;
       qbtns.forEach(x => x.classList.remove('active'));
       b.classList.add('active');
-      const fee = getBetFee(a);
+      const fee = getThrowFee(a);
       const net = (a - fee).toFixed(2);
       document.getElementById('throw-fee-line').textContent = `$${fee.toFixed(2)} fee — recipient gets $${net}`;
     };
@@ -2308,7 +2384,8 @@ function stopCatchWindow(msg) {
 }
 
 /* ── Dedup guard: only fires once per window ── */
-function onCatchHit(amount, fromName, throwId, channel) {
+function onCatchHit(amount, fromName, throwId, channel, opts) {
+  opts = opts || {};
   if (catchState.fired) return; // already caught something
   if (throwId && catchState.seenIds.has(throwId)) return; // duplicate
   catchState.fired = true;
@@ -2324,12 +2401,16 @@ function onCatchHit(amount, fromName, throwId, channel) {
   if (orb)    { orb.classList.remove('live'); orb.classList.add('caught'); }
   if (status)  status.textContent = '$' + (+amount).toFixed(2) + ' caught! 💸';
 
-  // Credit demo balance immediately — don't rely on chain refresh
-  if (DEMO_MODE && amount > 0) {
-    state.total   += +amount;
-    state.pathUSD  = state.total;
-    try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
-    renderWalletUI();
+  // Balance: demo_credit MQTT is the only demo credit path. Catch UI must not double-add.
+  // Optional credit only for sonic/chain fallbacks that never saw demo_credit.
+  if (!opts.skipCredit && DEMO_MODE && amount > 0 && channel !== 'demo_credit') {
+    applyDemoCreditOnce(+amount, {
+      throwId: throwId || null,
+      hash: null,
+      from: fromName,
+      amount: +amount,
+      ts: Date.now(),
+    });
   }
 
   moneyRain();
@@ -3831,21 +3912,233 @@ let dockScanInterval = null;
 function openDockScreen() {
   showScreen('dock');
   stopDockScan();
+  stopHangoutScan();
   // Reset everything fresh each time
-  document.getElementById('dock-friend-name').value = '';
-  document.getElementById('dock-gift-qr').classList.add('hidden');
-  document.getElementById('dock-gift-form').classList.remove('hidden');
-  document.getElementById('dock-gift-addr').textContent = '';
-  document.getElementById('dock-gift-name').textContent = 'them';
-  document.getElementById('dock-scan-status').textContent = '';
-  switchDockTab('new');
+  const nameEl = document.getElementById('dock-friend-name');
+  if (nameEl) nameEl.value = '';
+  document.getElementById('dock-gift-qr')?.classList.add('hidden');
+  document.getElementById('dock-gift-form')?.classList.remove('hidden');
+  const giftAddr = document.getElementById('dock-gift-addr');
+  if (giftAddr) giftAddr.textContent = '';
+  const giftName = document.getElementById('dock-gift-name');
+  if (giftName) giftName.textContent = 'them';
+  const scanStatus = document.getElementById('dock-scan-status');
+  if (scanStatus) scanStatus.textContent = '';
+  document.getElementById('hangout-live')?.classList.add('hidden');
+  document.getElementById('hangout-actions')?.classList.remove('hidden');
+  switchDockTab('hangout');
 }
 
 function switchDockTab(tab) {
   document.querySelectorAll('.dock-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-  document.getElementById('dock-panel-new').classList.toggle('active', tab === 'new');
-  document.getElementById('dock-panel-existing').classList.toggle('active', tab === 'existing');
+  document.getElementById('dock-panel-hangout')?.classList.toggle('active', tab === 'hangout');
+  document.getElementById('dock-panel-new')?.classList.toggle('active', tab === 'new');
+  document.getElementById('dock-panel-existing')?.classList.toggle('active', tab === 'existing');
   if (tab !== 'existing') stopDockScan();
+  if (tab !== 'hangout') stopHangoutScan();
+}
+
+/* ── Hangout: one QR → full contact mesh ── */
+let _hangoutIsHost = false;
+let hangoutScanStream = null;
+let hangoutScanInterval = null;
+
+function hangoutShareUrl(code) {
+  return location.origin + '/?crew=' + encodeURIComponent(code);
+}
+
+function renderHangoutMembers() {
+  const el = document.getElementById('hangout-members');
+  if (!el) return;
+  const members = typeof getCrewMembers === 'function' ? getCrewMembers() : [];
+  if (!members.length) {
+    el.innerHTML = '<span class="hangout-chip">Waiting for friends…</span>';
+    return;
+  }
+  el.innerHTML = members.map(m =>
+    '<span class="hangout-chip">' + (m.name || m.addr.slice(0, 6)).toUpperCase().slice(0, 8) + '</span>'
+  ).join('');
+}
+
+function applyCrewRosterToContacts(members) {
+  const myLc = (state.account?.address || '').toLowerCase();
+  let added = 0;
+  (members || []).forEach(m => {
+    if (!m || !m.addr) return;
+    if (m.addr.toLowerCase() === myLc) return;
+    const before = getContacts().length;
+    upsertContact((m.name || m.addr.slice(0, 6)).toUpperCase().slice(0, 6), m.addr);
+    if (getContacts().length > before) added++;
+  });
+  renderCrew();
+  return added;
+}
+
+function onHangoutCrewRoster(data) {
+  applyCrewRosterToContacts(data.members || []);
+  renderHangoutMembers();
+  const n = (data.members || []).length;
+  if (n > 1) showToast('Crew of ' + n + ' — everyone added');
+}
+
+function onHangoutCrewJoin(joiner) {
+  if (!joiner || !joiner.addr) return;
+  upsertContact((joiner.name || joiner.addr.slice(0, 6)).toUpperCase().slice(0, 6), joiner.addr);
+  renderCrew();
+  // Host rebroadcasts full mesh so late joiners get everyone
+  if (_hangoutIsHost && state.account) {
+    const me = {
+      addr: state.account.address,
+      name: (getHandle() || state.account.address.slice(0, 6)).toUpperCase().slice(0, 6),
+    };
+    const members = [me];
+    const seen = new Set([me.addr.toLowerCase()]);
+    getCrewMembers().forEach(m => {
+      if (!m.addr || seen.has(m.addr.toLowerCase())) return;
+      seen.add(m.addr.toLowerCase());
+      members.push({ addr: m.addr, name: m.name });
+    });
+    // Also merge local contacts already in hangout? keep roster = who joined room
+    publishCrewRoster(me.addr, members);
+  }
+  renderHangoutMembers();
+  showToast((joiner.name || 'Friend') + ' sat down');
+}
+
+async function startHangoutHost() {
+  if (!state.account) return;
+  _hangoutIsHost = true;
+  const code = typeof generateRoomCode === 'function' ? generateRoomCode() : String(1000 + Math.floor(Math.random() * 9000));
+  const myName = (getHandle() || state.account.address.slice(0, 6)).toUpperCase().slice(0, 6);
+  await enterRoom(code, {
+    onCrewRoster: onHangoutCrewRoster,
+    onCrewJoin: onHangoutCrewJoin,
+  });
+  publishCrewRoster(state.account.address, [{ addr: state.account.address, name: myName }]);
+  document.getElementById('hangout-actions')?.classList.add('hidden');
+  document.getElementById('hangout-live')?.classList.remove('hidden');
+  const codeEl = document.getElementById('hangout-code');
+  if (codeEl) codeEl.textContent = code;
+  const canvas = document.getElementById('hangout-qr-canvas');
+  if (canvas && typeof QRCode !== 'undefined') {
+    QRCode.toCanvas(canvas, hangoutShareUrl(code), { width: 200, margin: 1, color: { light: '#fff', dark: '#000' } });
+  }
+  renderHangoutMembers();
+  showToast('Hangout ' + code + ' — friends scan this QR');
+}
+
+async function joinHangoutByCode(code) {
+  code = String(code || '').replace(/\D/g, '').slice(0, 4);
+  if (code.length < 4) {
+    showToast('Need a 4-digit hangout code');
+    return;
+  }
+  if (!state.account) return;
+  _hangoutIsHost = false;
+  const myName = (getHandle() || state.account.address.slice(0, 6)).toUpperCase().slice(0, 6);
+  await enterRoom(code, {
+    onCrewRoster: onHangoutCrewRoster,
+    onCrewJoin: onHangoutCrewJoin,
+  });
+  publishCrewJoin(state.account.address, myName);
+  // Also add self into local view until roster arrives
+  document.getElementById('hangout-actions')?.classList.add('hidden');
+  document.getElementById('hangout-live')?.classList.remove('hidden');
+  const codeEl = document.getElementById('hangout-code');
+  if (codeEl) codeEl.textContent = code;
+  const canvas = document.getElementById('hangout-qr-canvas');
+  if (canvas && typeof QRCode !== 'undefined') {
+    QRCode.toCanvas(canvas, hangoutShareUrl(code), { width: 200, margin: 1, color: { light: '#fff', dark: '#000' } });
+  }
+  renderHangoutMembers();
+  showToast('Joined hangout ' + code);
+}
+
+function handleCrewParams() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const crew = params.get('crew');
+    if (!crew) return false;
+    params.delete('crew');
+    const q = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (q ? '?' + q : ''));
+    if (!state.account) {
+      try { sessionStorage.setItem('throw_pending_crew', String(crew)); } catch(_) {}
+      return false;
+    }
+    joinHangoutByCode(crew);
+    showScreen('dock');
+    switchDockTab('hangout');
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function startHangoutScan() {
+  const status = document.getElementById('hangout-scan-status');
+  const video = document.getElementById('hangout-scanner');
+  const cnv = document.getElementById('hangout-scanner-canvas');
+  if (!video) return;
+  if (status) status.textContent = 'Starting camera…';
+  try {
+    hangoutScanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    video.srcObject = hangoutScanStream;
+    video.classList.remove('hidden');
+    await video.play();
+    if (status) status.textContent = 'Point at the host hangout QR…';
+    const onCode = (raw) => {
+      stopHangoutScan();
+      let code = null;
+      try {
+        if (/crew=/i.test(raw)) {
+          const u = new URL(raw, location.origin);
+          code = u.searchParams.get('crew');
+        } else if (/^\d{4}$/.test(String(raw).trim())) {
+          code = String(raw).trim();
+        }
+      } catch (_) {}
+      if (!code) {
+        if (status) status.textContent = 'Not a hangout QR — ask host to show Hangout.';
+        return;
+      }
+      joinHangoutByCode(code);
+    };
+    if ('BarcodeDetector' in window) {
+      const detector = new BarcodeDetector({ formats: ['qr_code'] });
+      hangoutScanInterval = setInterval(async () => {
+        try {
+          const codes = await detector.detect(video);
+          if (codes.length) onCode(codes[0].rawValue);
+        } catch (_) {}
+      }, 400);
+    } else if (cnv) {
+      cnv.classList.remove('hidden');
+      const ctx = cnv.getContext('2d');
+      hangoutScanInterval = setInterval(() => {
+        if (!video.videoWidth) return;
+        cnv.width = video.videoWidth;
+        cnv.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+        if (typeof jsQR !== 'undefined') {
+          const img = ctx.getImageData(0, 0, cnv.width, cnv.height);
+          const code = jsQR(img.data, img.width, img.height);
+          if (code) onCode(code.data);
+        }
+      }, 400);
+    }
+  } catch (e) {
+    if (status) status.textContent = 'Camera denied — use Join with code instead.';
+  }
+}
+
+function stopHangoutScan() {
+  if (hangoutScanInterval) { clearInterval(hangoutScanInterval); hangoutScanInterval = null; }
+  if (hangoutScanStream) { hangoutScanStream.getTracks().forEach(t => t.stop()); hangoutScanStream = null; }
+  const video = document.getElementById('hangout-scanner');
+  const cnv = document.getElementById('hangout-scanner-canvas');
+  if (video) { video.classList.add('hidden'); video.srcObject = null; }
+  if (cnv) cnv.classList.add('hidden');
 }
 
 async function dockGiftWallet() {
@@ -3886,7 +4179,7 @@ async function startDockScan() {
     video.srcObject = dockScanStream;
     video.classList.remove('hidden');
     await video.play();
-    status.textContent = 'Point at their CATCH QR…';
+    status.textContent = 'Point at their Load / receive QR…';
 
     if ('BarcodeDetector' in window) {
       const detector = new BarcodeDetector({ formats: ['qr_code'] });
@@ -3980,13 +4273,81 @@ async function handleURLParams() {
   }
 }
 
+let _fundPollTimer = null;
+let _fundArrivalToasted = false;
+
+function stopFundBalancePoll() {
+  if (_fundPollTimer) { clearInterval(_fundPollTimer); _fundPollTimer = null; }
+}
+
+function fundChipText(total, cap) {
+  const t = Number(total) || 0;
+  const c = Number(cap) || CAP_USD;
+  const room = Math.max(0, c - t);
+  if (t < 0.01) return 'Empty pocket — load up to $' + c;
+  if (t >= 1) return 'Loaded $' + t.toFixed(2) + ' — ready to throw';
+  return 'On you now: $' + t.toFixed(2) + ' · room for $' + room.toFixed(2);
+}
+
+function buildReceiveShareUrl(origin, name, addr) {
+  return String(origin || '') + '/?addName=' + encodeURIComponent(name || '') +
+    '&addAddr=' + encodeURIComponent(addr || '');
+}
+
+function updateFundBalanceChip() {
+  const chip = document.getElementById('fund-balance-chip');
+  if (!chip) return;
+  chip.textContent = fundChipText(state.total, CAP_USD);
+  const done = document.getElementById('btn-fund-done');
+  if (done) done.classList.toggle('hidden', (state.total || 0) < 1);
+}
+
 function openAddCashScreen() {
   showScreen('qr');
+  _fundArrivalToasted = false;
   const addr = state.account?.address || '';
   renderQR(addr);
   const pk = _storedPK || localStorage.getItem('throw_pk') || 'Not found';
-  document.getElementById('backup-key-display').textContent = pk;
+  const pkEl = document.getElementById('backup-key-display');
+  if (pkEl) pkEl.textContent = pk;
+  updateFundBalanceChip();
+  // Poll while funding so Tempo → THROW deposits show up without manual refresh
+  stopFundBalancePoll();
+  _fundPollTimer = setInterval(async () => {
+    if (currentScreen !== 'qr') { stopFundBalancePoll(); return; }
+    try {
+      if (!DEMO_MODE) await refreshBalances();
+      updateFundBalanceChip();
+      if ((state.total || 0) >= 1 && !_fundArrivalToasted) {
+        _fundArrivalToasted = true;
+        showToast('Cash landed — $' + state.total.toFixed(2) + ' ready');
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          try { navigator.vibrate([40, 40, 80]); } catch(_) {}
+        }
+      }
+    } catch(_) {}
+  }, 4000);
 }
+
+async function shareReceiveLink() {
+  const addr = state.account?.address;
+  if (!addr) return;
+  const name = getHandle() || addr.slice(0, 6);
+  const url = buildReceiveShareUrl(location.origin, name, addr);
+  const text = 'Throw me cash on THROW — I\'m ' + name + '. ' + url;
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Throw me cash', text, url }); return; } catch(e) {
+      if (e && e.name === 'AbortError') return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast('Receive link copied');
+  } catch(_) {
+    showToast(addr);
+  }
+}
+
 
 /* ─ First-launch camera scan ─ */
 let _firstScanStream   = null;
@@ -4213,13 +4574,42 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
   document.getElementById('btn-dock').onclick = openDockScreen;
 
-  /* ── Dock screen ── */
-  document.getElementById('dock-back').onclick = () => { stopDockScan(); showScreen('wallet'); };
+  /* ── Dock / Hangout screen ── */
+  document.getElementById('dock-back').onclick = () => {
+    stopDockScan();
+    stopHangoutScan();
+    showScreen('wallet');
+  };
   document.querySelectorAll('.dock-tab').forEach(tab => {
     tab.onclick = () => switchDockTab(tab.dataset.tab);
   });
   document.getElementById('btn-dock-gift').onclick = dockGiftWallet;
   document.getElementById('btn-dock-scan').onclick = startDockScan;
+  const btnHangHost = document.getElementById('btn-hangout-host');
+  if (btnHangHost) btnHangHost.onclick = () => startHangoutHost().catch(e => showToast(e.message || 'Hangout failed'));
+  const btnHangJoin = document.getElementById('btn-hangout-join');
+  if (btnHangJoin) btnHangJoin.onclick = () => {
+    const code = prompt('Hangout code (4 digits)');
+    if (code) joinHangoutByCode(code).catch(e => showToast(e.message || 'Join failed'));
+  };
+  const btnHangScan = document.getElementById('btn-hangout-scan');
+  if (btnHangScan) btnHangScan.onclick = () => startHangoutScan();
+  const btnHangShare = document.getElementById('btn-hangout-share');
+  if (btnHangShare) btnHangShare.onclick = async () => {
+    const code = document.getElementById('hangout-code')?.textContent || room.code;
+    if (!code || code === '----') return;
+    const url = hangoutShareUrl(code);
+    const text = 'Join our THROW hangout — code ' + code + ' ' + url;
+    if (navigator.share) {
+      try { await navigator.share({ title: 'THROW hangout', text, url }); return; } catch(_) {}
+    }
+    try { await navigator.clipboard.writeText(url); showToast('Hangout link copied'); } catch(_) { showToast(code); }
+  };
+  const btnHangDone = document.getElementById('btn-hangout-done');
+  if (btnHangDone) btnHangDone.onclick = () => {
+    stopHangoutScan();
+    showScreen('wallet');
+  };
 
   /* ── Contact overlay ── */
   initContactOverlay();
@@ -4229,6 +4619,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (rainBtn) rainBtn.onclick = () => executeMakeItRain();
   document.getElementById('btn-qr-receive').onclick = () => openAddCashScreen();
   document.getElementById('btn-load-cash').onclick  = () => openAddCashScreen();
+  const _loadTonight = document.getElementById('btn-load-tonight');
+  if (_loadTonight) _loadTonight.onclick = () => openAddCashScreen();
 
   // Manual address throw button
   document.getElementById('throw-addr-send').onclick = async () => {
@@ -4386,6 +4778,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Handle ?addName=&addAddr= contact share links
   handleContactParams();
 
+  // Live balances: refresh when coming back to the app after a throw
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && state.account && !DEMO_MODE) {
+      refreshBalances().catch(() => {});
+    }
+  });
+
   // Demo mode button — prominent on wallet screen
   const demoBtnWallet = document.getElementById('btn-demo-toggle');
   if (demoBtnWallet) {
@@ -4402,18 +4801,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     refreshBalances().then(() => showScreen('wallet'));
   };
 
-  /* ── QR screen ── */
-  document.getElementById('qr-back').onclick = () => showScreen('wallet');
-  document.getElementById('btn-copy-addr').onclick = () => {
-    if (!state.account) return;
-    navigator.clipboard?.writeText(state.account.address);
-    document.getElementById('btn-copy-addr').textContent = '1 — ✓ ADDRESS COPIED!';
-    document.getElementById('fund-copied-toast').classList.remove('hidden');
-    setTimeout(() => document.getElementById('btn-copy-addr').textContent = '1 — COPY MY WALLET ADDRESS', 2000);
+  /* ── QR / Load for tonight screen ── */
+  const qrBack = document.getElementById('qr-back');
+  if (qrBack) qrBack.onclick = () => {
+    stopFundBalancePoll();
+    showScreen('wallet');
   };
 
-  document.getElementById('btn-open-tempo').onclick = () => {
-    window.open('https://wallet.tempo.xyz', '_blank');
+  const copyAddrBtn = document.getElementById('btn-copy-addr');
+  if (copyAddrBtn) copyAddrBtn.onclick = () => {
+    if (!state.account) return;
+    navigator.clipboard?.writeText(state.account.address);
+    copyAddrBtn.textContent = '✓ Address copied';
+    const toast = document.getElementById('fund-copied-toast');
+    if (toast) toast.classList.remove('hidden');
+    setTimeout(() => { copyAddrBtn.textContent = 'Copy my address'; }, 2000);
+  };
+
+  const openTempo = document.getElementById('btn-open-tempo');
+  if (openTempo) openTempo.onclick = () => {
+    // Tempo Wallet: fiat onramp + bridge, then user sends to THROW address
+    window.open('https://wallet.tempo.xyz', '_blank', 'noopener');
+  };
+
+  const shareRecv = document.getElementById('btn-share-receive');
+  if (shareRecv) shareRecv.onclick = () => shareReceiveLink();
+
+  const fundDemo = document.getElementById('btn-fund-demo');
+  if (fundDemo) fundDemo.onclick = () => {
+    setDemoMode(true);
+    updateFundBalanceChip();
+    showToast('Demo $50 loaded — throw like cash');
+    setTimeout(() => { stopFundBalancePoll(); showScreen('wallet'); }, 600);
+  };
+
+  const fundDone = document.getElementById('btn-fund-done');
+  if (fundDone) fundDone.onclick = () => {
+    stopFundBalancePoll();
+    showScreen('wallet');
   };
 
   document.getElementById('btn-copy-pk').onclick = () => {
@@ -4592,6 +5017,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         if (await maybeOpenClaimAfterWallet()) return;
       } catch(e) { console.warn('claim open failed', e); }
+      try {
+        let pendingCrew = null;
+        try { pendingCrew = sessionStorage.getItem('throw_pending_crew'); } catch(_) {}
+        if (pendingCrew) {
+          try { sessionStorage.removeItem('throw_pending_crew'); } catch(_) {}
+          await joinHangoutByCode(pendingCrew);
+          showScreen('dock');
+          switchDockTab('hangout');
+          return;
+        }
+        if (handleCrewParams()) return;
+      } catch(e) { console.warn('crew join failed', e); }
       return;
     }
 
@@ -4930,14 +5367,25 @@ function announcePokerStreet(street, pot) {
   setPokerAnnounce(line, true);
 }
 
-function announcePokerBlinds(seats, sbIdx, bbIdx, sbAmt, bbAmt) {
+function announcePokerStart(seats, sbIdx, bbIdx, sbAmt, bbAmt, opts) {
+  opts = opts || {};
   const sb = seats[sbIdx];
   const bb = seats[bbIdx];
-  const parts = [];
-  if (sb) parts.push(pokerSeatName(sb) + ', small blind ' + sbAmt);
-  if (bb && bbIdx !== sbIdx) parts.push(pokerSeatName(bb) + ', big blind ' + bbAmt);
-  const line = parts.join('. ') + '. Real cards — deal them out.';
-  setPokerAnnounce(line, true);
+  const sbName = sb ? pokerSeatName(sb) : 'Small blind';
+  const bbName = bb ? pokerSeatName(bb) : 'Big blind';
+  let line = 'Starting poker. Small blind ' + sbAmt + ', big blind ' + bbAmt + '. ';
+  if (bb && sb && sbIdx !== bbIdx) {
+    line += bbName + ", you're the big blind. " + sbName + ", you're the small blind. ";
+  } else if (sb) {
+    line += sbName + ', blinds posted. ';
+  }
+  line += "Let's start. Real cards — deal them out.";
+  // Guests get text; only host / table-center phone speaks (pokerSpeak enforces)
+  setPokerAnnounce(line, opts.speak !== false);
+}
+
+function announcePokerBlinds(seats, sbIdx, bbIdx, sbAmt, bbAmt) {
+  announcePokerStart(seats, sbIdx, bbIdx, sbAmt, bbAmt, { speak: true });
 }
 
 
@@ -5037,11 +5485,48 @@ async function openPokerSetup() {
 
   showScreen('poker-setup');
   loadPokerTablePrefs();
+  const codeEl = document.getElementById('poker-setup-code');
+  if (codeEl) codeEl.textContent = 'Table ' + roomCode + ' — seat crew, then Deal';
   renderPokerSetup();
   enterRoom(roomCode, {}).catch(() => {});
   _subscribePokerTopic(roomCode);
   // Warm TTS voices (Chrome loads them async)
   try { window.speechSynthesis && window.speechSynthesis.getVoices(); } catch(_) {}
+
+  const seatAll = document.getElementById('btn-poker-seat-all');
+  if (seatAll) {
+    seatAll.onclick = () => {
+      if (!state.poker) return;
+      const joinSelf = document.getElementById('poker-join-self')?.checked;
+      const assigned = new Set(state.poker.seats.map(s => s.addr.toLowerCase()));
+      if (joinSelf && state.account?.address && !assigned.has(state.account.address.toLowerCase())) {
+        state.poker.seats.push({
+          addr: state.account.address,
+          name: 'YOU',
+          role: 'player',
+          stack: POKER_STARTING_STACK,
+          bet: 0,
+          folded: false,
+        });
+        assigned.add(state.account.address.toLowerCase());
+      }
+      for (const c of getContacts()) {
+        if (state.poker.seats.length >= POKER_MAX_SEATS) break;
+        if (assigned.has(c.addr.toLowerCase())) continue;
+        state.poker.seats.push({
+          addr: c.addr,
+          name: c.name || c.addr.slice(0, 6),
+          role: 'player',
+          stack: POKER_STARTING_STACK,
+          bet: 0,
+          folded: false,
+        });
+        assigned.add(c.addr.toLowerCase());
+      }
+      renderPokerSetup();
+      showToast(state.poker.seats.length + ' seated — tap Deal when ready');
+    };
+  }
 }
 
 function renderPokerSetup() {
@@ -5333,13 +5818,13 @@ async function startPokerGame(seats, roomCode) {
   if (vSetup) _pokerVoiceOn = !!vSetup.checked;
   if (cSetup) _pokerTableCenter = !!cSetup.checked;
 
-  if (startBtn) startBtn.textContent = 'Start Game';
+  if (startBtn) startBtn.textContent = 'Deal — start the hand';
   showScreen('poker-table');
   applyPokerTableMode();
-  announcePokerBlinds(seats, p.sbIdx, p.bbIdx, sbAmt, bbAmt);
+  announcePokerStart(seats, p.sbIdx, p.bbIdx, sbAmt, bbAmt, { speak: true });
   renderPokerTable();
-  // Slight delay so blinds finish speaking before first turn call
-  setTimeout(() => pokerNextTurn(), _pokerVoiceOn ? 2200 : 200);
+  // Longer delay so the full "Starting poker…" line finishes before first turn call
+  setTimeout(() => pokerNextTurn(), _pokerVoiceOn ? 5200 : 250);
 }
 
 function pokerNextTurn() {
@@ -5829,6 +6314,16 @@ function _handlePokerMessage(data, opts) {
         }
       } catch (e) { console.warn('poker blind sync failed', e); }
       showScreen('poker-table');
+      applyPokerTableMode();
+      // Guests see the opener on-screen; center phone may also speak if enabled
+      announcePokerStart(
+        state.poker.seats,
+        state.poker.sbIdx,
+        state.poker.bbIdx,
+        POKER_SB,
+        POKER_BB,
+        { speak: true }
+      );
     } else if (state.poker.isHost) {
       // Host already applied via local publish — ignore echo
       if (!opts.local) return;

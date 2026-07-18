@@ -2996,16 +2996,16 @@ a.contact-detail-value { color: var(--accent); text-decoration: none; }
 }
 .dock-tab {
   flex: 1;
-  padding: 0.6rem 0;
+  padding: 0.55rem 4px;
   background: transparent;
   border: none;
   color: var(--text-muted);
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 0.82rem;
+  font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
 }
 .dock-tab.active {
   background: var(--accent);
@@ -4536,4 +4536,172 @@ body:has(.demo-banner:not(.hidden)) .screen {
 @keyframes tableOrbPulse {
   0%, 100% { box-shadow: 0 0 36px rgba(0,229,160,0.4), 0 0 80px rgba(0,229,160,0.2); }
   50% { box-shadow: 0 0 56px rgba(0,229,160,0.65), 0 0 110px rgba(0,229,160,0.35); }
+}
+
+/* ── LOAD FOR TONIGHT / FUND ─────────────────────────────────────────── */
+.fund-ui {
+  width: 100%;
+  max-width: 400px;
+  padding-bottom: 40px;
+  overflow-y: auto;
+}
+.fund-ui .fund-hero {
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-2);
+  line-height: 1.45;
+  margin: -8px 0 14px;
+}
+.fund-ui .fund-balance-chip {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 10px;
+  letter-spacing: 0.02em;
+}
+.fund-ui .fund-done-btn {
+  width: 100%;
+  margin-bottom: 14px;
+}
+.fund-ui .fund-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 12px;
+  text-align: left;
+}
+.fund-ui .fund-card-accent {
+  border-color: rgba(0,229,160,0.35);
+  background: linear-gradient(165deg, rgba(0,229,160,0.1), rgba(255,255,255,0.02));
+}
+.fund-ui .fund-card-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.fund-ui .fund-card-title {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.fund-ui .fund-card-body {
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.45;
+  margin-bottom: 12px;
+}
+.fund-ui .fund-olist {
+  margin: 10px 0 0 18px;
+  padding: 0;
+  list-style: decimal;
+}
+.fund-ui .fund-olist li {
+  margin-bottom: 4px;
+}
+.fund-ui .fund-bridge-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.fund-ui .fund-bridge-link {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-decoration: none;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(0,0,0,0.25);
+}
+.fund-ui .fund-share-btn { font-size: 13px; }
+.fund-ui .fund-step-btn { max-width: none; }
+.fund-ui #qr-canvas {
+  display: block;
+  margin: 8px auto 8px;
+  border-radius: 12px;
+  background: #fff;
+}
+.fund-ui .fund-copied-toast {
+  margin: 8px auto 0;
+  text-align: center;
+  width: fit-content;
+  max-width: 100%;
+}
+.load-tonight-btn {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #04140f;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 0 24px rgba(0,229,160,0.35);
+  animation: loadPulse 2.2s ease-in-out infinite;
+}
+.load-tonight-btn.hidden { display: none !important; }
+@keyframes loadPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
+/* ── Hangout crew mesh ── */
+.hangout-code-label,
+.hangout-members-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-top: 8px;
+}
+.hangout-code {
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  text-align: center;
+  margin: 4px 0 12px;
+}
+#hangout-qr-canvas {
+  display: block;
+  margin: 0 auto 12px;
+  border-radius: 12px;
+  background: #fff;
+}
+.hangout-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  min-height: 36px;
+}
+.hangout-chip {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-1);
+}
+.poker-setup-code {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  margin: 6px 0 0;
+  letter-spacing: 0.04em;
 }
