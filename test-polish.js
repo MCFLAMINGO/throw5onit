@@ -43,7 +43,7 @@ console.log('5) Balance polish + SW');
 {
   assert(/font-variant-numeric:\s*tabular-nums/.test(css), 'tabular nums');
   assert(/bal-tick/.test(app) && /balTick|bal-tick/.test(css), 'balance tick animation');
-  assert(/VERSION = 'v154'/.test(sw), 'SW v154');
+  assert(/VERSION = 'v15[5-9]'/.test(sw) || /VERSION = 'v1[6-9]\d'/.test(sw), 'SW version bumped');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

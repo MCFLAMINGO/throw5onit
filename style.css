@@ -69,8 +69,9 @@ html, body {
 }
 
 /* ── BACK BUTTON ─────────────────────────────────────────────────────── */
-.back-btn {
-  position: absolute;
+/* Fixed on active screens so scroll / centered layouts never hide escape */
+.screen > .back-btn {
+  position: fixed;
   top: calc(var(--safe-top) + 12px);
   left: 12px;
   height: 40px;
@@ -84,15 +85,16 @@ html, body {
   font-weight: 700;
   font-family: var(--font);
   cursor: pointer;
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  z-index: 60;
+  z-index: 80;
   letter-spacing: 0.02em;
   box-shadow: 0 4px 18px rgba(0,0,0,0.45);
   -webkit-tap-highlight-color: transparent;
 }
+.screen.active > .back-btn { display: flex; }
 .back-btn:active { background: rgba(30, 40, 36, 0.98); transform: scale(0.97); }
 /* Modals / overlays: keep back top-left and obvious */
 .contact-overlay .back-btn,
@@ -102,6 +104,12 @@ html, body {
   top: calc(var(--safe-top) + 12px);
   left: 12px;
   right: auto;
+  display: flex;
+  z-index: 80;
+}
+/* Demo banner covers the top strip — park back below it */
+body:has(.demo-banner:not(.hidden)) .screen > .back-btn {
+  top: calc(var(--safe-top, 0px) + 40px);
 }
 
 /* ── SCREEN LABEL ────────────────────────────────────────────────────── */
@@ -3417,9 +3425,9 @@ a.contact-detail-value { color: var(--accent); text-decoration: none; }
 }
 .demo-banner.hidden { display: none; }
 
-/* Push screens down when banner is visible */
+/* Push screens down when banner is visible (room for banner + fixed back) */
 body:has(.demo-banner:not(.hidden)) .screen {
-  padding-top: calc(var(--safe-top, 0px) + 32px);
+  padding-top: calc(var(--safe-top, 0px) + 72px);
 }
 
 /* ── DEMO TOGGLE IN PROFILE ──────────────────────────────────────────── */
@@ -4800,4 +4808,46 @@ button:disabled,
   color: var(--accent);
   margin: 6px 0 0;
   letter-spacing: 0.04em;
+}
+
+
+/* ── SESSION RAIL — resume live games without losing seats/money ───────── */
+.session-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto 14px;
+  padding: 0 4px;
+}
+.session-rail.hidden { display: none; }
+.session-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1.5px solid rgba(0, 229, 160, 0.45);
+  background: linear-gradient(135deg, rgba(0, 229, 160, 0.12), rgba(0, 0, 0, 0.35));
+  color: #fff;
+  font-family: var(--font);
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.session-chip.hidden { display: none; }
+.session-chip:active { transform: scale(0.98); }
+.session-chip-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--accent, #00e5a0);
+}
+.session-chip-sub {
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.75;
 }

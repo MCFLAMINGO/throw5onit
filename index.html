@@ -383,6 +383,18 @@
     </div>
   </div><!-- /wallet-arena -->
 
+  <!-- Active games stay alive when you leave a screen — tap to return -->
+  <div class="session-rail hidden" id="session-rail" aria-live="polite">
+    <button type="button" class="session-chip hidden" id="btn-resume-poker">
+      <span class="session-chip-title">Hold'em table</span>
+      <span class="session-chip-sub" id="resume-poker-sub">Return to hand</span>
+    </button>
+    <button type="button" class="session-chip hidden" id="btn-resume-pot">
+      <span class="session-chip-title">Open pot</span>
+      <span class="session-chip-sub" id="resume-pot-sub">Return to bet</span>
+    </button>
+  </div>
+
   <!-- Action grid — THROW is the only hero action -->
   <div class="action-grid">
     <button class="action-card action-small" id="btn-dock">
@@ -543,7 +555,7 @@
           <div class="throw-orb-label" id="throw-orb-label">$5</div>
           <div class="throw-orb-hint" id="throw-orb-hint">Hold &amp; flick</div>
         </div>
-        <div class="throw-orb-sub" id="throw-orb-sub">Pick a friend — or throw a claim link to anyone</div>
+        <div class="throw-orb-sub" id="throw-orb-sub">Pick a friend — or point at Hold'em to sit</div>
         <button class="btn-tap-throw hidden" id="btn-tap-throw">TAP TO THROW</button>
       </div>
 
@@ -656,8 +668,9 @@
   <button type="button" class="back-btn" id="poker-setup-back">← Wallet</button>
   <div class="bet-setup-ui">
     <div class="screen-label">TEXAS HOLD'EM</div>
-    <div class="fee-notice" style="margin-top:-4px">1) Hangout first so everyone's in your crew. 2) Tap who sits. 3) Put one unmuted phone in the middle — it calls blinds and turns.</div>
+    <div class="fee-notice" style="margin-top:-4px">Friends point THROW at this phone to sit. Or seat crew below. Put one unmuted phone in the middle — it calls blinds and turns.</div>
     <div class="poker-setup-code" id="poker-setup-code">Table —</div>
+    <div class="fee-notice" id="poker-throw-join-hint" style="margin-top:4px;opacity:0.9">Open table — nearby phones can THROW to join</div>
 
     <div class="pot-arena" style="height:300px;margin:16px 0">
       <div class="pot-orb" id="poker-setup-orb">
@@ -685,6 +698,7 @@
     </label>
 
     <button class="btn-primary" id="btn-poker-start" disabled>Deal — start the hand</button>
+    <button type="button" class="btn-ghost" id="btn-poker-leave-setup" style="width:100%;margin-top:10px;opacity:0.7">Leave table</button>
   </div>
 </div>
 
@@ -695,6 +709,7 @@
     <div class="poker-table-toolbar">
       <button type="button" class="poker-tool-btn" id="btn-poker-voice-toggle" title="Voice on/off">🔊 Voice</button>
       <button type="button" class="poker-tool-btn" id="btn-poker-center-toggle" title="Table center glow">✦ Table</button>
+      <button type="button" class="poker-tool-btn" id="btn-poker-leave-table" title="Leave table for good">Leave</button>
     </div>
 
     <div class="poker-announce" id="poker-announce-line">Real cards · phone runs the pot</div>
