@@ -5438,7 +5438,33 @@ function pokerSeatName(seat) {
   return n || (seat.addr ? seat.addr.slice(2, 6).toUpperCase() : 'Player');
 }
 
-function setPokerAnnounce(line, speak) {
+/** Speak money clearly for TTS — "$2" → "2 dollars", "$1.50" → "1 dollar 50" */
+function pokerMoneySpeak(amount) {
+  const n = Math.round((Number(amount) || 0) * 100) / 100;
+  if (n <= 0) return 'nothing';
+  const whole = Math.floor(n);
+  const cents = Math.round((n - whole) * 100);
+  let out = '';
+  if (whole === 1) out = '1 dollar';
+  else if (whole > 0) out = whole + ' dollars';
+  if (cents) out += (out ? ' ' : '') + cents;
+  return out || 'nothing';
+}
+
+/** iOS / Chrome need a user-gesture unlock before TTS works mid-hand */
+function unlockPokerVoice() {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  try {
+    window.speechSynthesis.getVoices();
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    u.rate = 2;
+    window.speechSynthesis.speak(u);
+    window.speechSynthesis.cancel();
+  } catch(_) {}
+}
+
+function setPokerAnnounce(line, speak, forceSpeak) {
   const el = document.getElementById('poker-announce-line');
   if (el) {
     el.textContent = line || '';
@@ -5447,35 +5473,37 @@ function setPokerAnnounce(line, speak) {
     el.classList.add('flash');
     setTimeout(() => el.classList.remove('flash'), 700);
   }
-  if (speak) pokerSpeak(line);
+  if (speak) pokerSpeak(line, forceSpeak);
 }
 
-function pokerSpeak(text) {
+function pokerSpeak(text, forceSpeak) {
   if (!_pokerVoiceOn || !text) return;
   if (typeof window === 'undefined' || !window.speechSynthesis) return;
-  // Only the table phone (host / center mode) talks — avoids a chorus
+  // Table phone (host / center) guides the room. forceSpeak = your-turn nudge on any phone.
   const p = state.poker;
-  if (p && !p.isHost && !_pokerTableCenter) return;
+  if (!forceSpeak && p && !p.isHost && !_pokerTableCenter) return;
 
+  // Don't cancel mid-sentence — queue dealer lines so blinds → turn play in order
   _pokerSpeakChain = _pokerSpeakChain.then(() => new Promise(resolve => {
     try {
-      window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(String(text));
-      u.rate = 1.02;
+      u.rate = 0.98;
       u.pitch = 1;
       u.volume = 1;
       // Prefer a clear English voice when available
       try {
         const voices = window.speechSynthesis.getVoices() || [];
-        const en = voices.find(v => /en[-_]US/i.test(v.lang) && /Google|Samantha|Daniel|Alex/i.test(v.name))
+        const en = voices.find(v => /en[-_]US/i.test(v.lang) && /Google|Samantha|Daniel|Alex|Female|Male/i.test(v.name))
           || voices.find(v => /^en/i.test(v.lang));
         if (en) u.voice = en;
       } catch(_) {}
-      u.onend = () => resolve();
-      u.onerror = () => resolve();
+      let settled = false;
+      const done = () => { if (settled) return; settled = true; resolve(); };
+      u.onend = done;
+      u.onerror = done;
       window.speechSynthesis.speak(u);
       // Safety resolve if engine stalls
-      setTimeout(resolve, Math.min(8000, 900 + String(text).length * 60));
+      setTimeout(done, Math.min(12000, 1200 + String(text).length * 70));
     } catch(_) { resolve(); }
   }));
 }
@@ -5513,34 +5541,67 @@ function loadPokerTablePrefs() {
 }
 
 function announcePokerTurn(seat, currentBet) {
+  const p = state.poker;
   const name = pokerSeatName(seat);
   const callAmt = Math.max(0, (currentBet || 0) - (seat.bet || 0));
+  const pot = p?.pot || 0;
+  const seatIdx = p?.seats ? p.seats.indexOf(seat) : -1;
+  const isBB = p && seatIdx === p.bbIdx;
+  const isSB = p && seatIdx === p.sbIdx;
+  const street = (p?.street || 'preflop');
   let line;
-  if (callAmt <= 0) line = name + ', your action — check or bet';
-  else line = name + ', your bet — ' + callAmt + ' to call';
+
+  // Big blind option preflop (matched, hasn't closed action yet)
+  if (street === 'preflop' && isBB && callAmt <= 0) {
+    line = name + ', big blind is up. Check or raise. Pot ' + pokerMoneySpeak(pot) + '.';
+  } else if (street === 'preflop' && isSB && callAmt > 0) {
+    line = name + ', small blind. ' + pokerMoneySpeak(callAmt) + ' to call. Pot ' + pokerMoneySpeak(pot) + '.';
+  } else if (callAmt <= 0) {
+    line = name + ', action. Check or bet. Pot ' + pokerMoneySpeak(pot) + '.';
+  } else {
+    line = name + ', action. ' + pokerMoneySpeak(callAmt) + ' to call. Pot ' + pokerMoneySpeak(pot) + '.';
+  }
   setPokerAnnounce(line, true);
 }
 
 function announcePokerAction(data, seat) {
+  const p = state.poker;
   const name = pokerSeatName(seat);
   const a = data.action;
+  const pot = p?.pot || 0;
+  const amt = data.amount || 0;
   let line = name + ' ';
-  if (a === 'fold') line += 'folds';
-  else if (a === 'check') line += 'checks';
-  else if (a === 'call') line += 'calls' + (data.amount ? (' ' + data.amount) : '');
-  else if (a === 'raise') line += 'raises to ' + (seat?.bet || data.amount || '');
-  else line += a;
+
+  if (a === 'fold') {
+    line += 'folds.';
+  } else if (a === 'check') {
+    line += 'checks.';
+  } else if (a === 'call') {
+    if (seat && seat.stack === 0) line += 'calls all in for ' + pokerMoneySpeak(amt) + '.';
+    else line += 'calls ' + pokerMoneySpeak(amt) + '.';
+  } else if (a === 'raise') {
+    const to = seat?.bet || data.amount || 0;
+    if (seat && seat.stack === 0) line += 'is all in — raises to ' + pokerMoneySpeak(to) + '.';
+    else line += 'raises to ' + pokerMoneySpeak(to) + '.';
+  } else if (a === 'allin') {
+    line += 'is all in for ' + pokerMoneySpeak(amt || seat?.bet || 0) + '.';
+  } else {
+    line += a + '.';
+  }
+  if (pot > 0 && a !== 'fold' && a !== 'check') {
+    line += ' Pot ' + pokerMoneySpeak(pot) + '.';
+  }
   setPokerAnnounce(line, true);
 }
 
 function announcePokerStreet(street, pot) {
-  const label = (street || '').toUpperCase();
-  let line = label;
-  if (street === 'flop') line = 'Flop. Pot is ' + pot;
-  else if (street === 'turn') line = 'Turn. Pot is ' + pot;
-  else if (street === 'river') line = 'River. Pot is ' + pot;
-  else if (street === 'showdown') line = 'Showdown. Pot is ' + pot + '. Host picks the winner.';
-  else if (street === 'preflop') line = 'Preflop. Pot is ' + pot;
+  let line;
+  if (street === 'flop') line = 'Flop. Pot is ' + pokerMoneySpeak(pot) + '.';
+  else if (street === 'turn') line = 'Turn. Pot is ' + pokerMoneySpeak(pot) + '.';
+  else if (street === 'river') line = 'River. Pot is ' + pokerMoneySpeak(pot) + '.';
+  else if (street === 'showdown') line = 'Showdown. Pot is ' + pokerMoneySpeak(pot) + '. Host taps the winner.';
+  else if (street === 'preflop') line = 'Preflop. Pot is ' + pokerMoneySpeak(pot) + '.';
+  else line = (street || '').toUpperCase() + '. Pot is ' + pokerMoneySpeak(pot) + '.';
   setPokerAnnounce(line, true);
 }
 
@@ -5550,13 +5611,14 @@ function announcePokerStart(seats, sbIdx, bbIdx, sbAmt, bbAmt, opts) {
   const bb = seats[bbIdx];
   const sbName = sb ? pokerSeatName(sb) : 'Small blind';
   const bbName = bb ? pokerSeatName(bb) : 'Big blind';
-  let line = 'Starting poker. Small blind ' + sbAmt + ', big blind ' + bbAmt + '. ';
+  // Dealer script: blinds first, then who posts what, then deal
+  let line = 'Poker. Small blind ' + pokerMoneySpeak(sbAmt) + '. Big blind ' + pokerMoneySpeak(bbAmt) + '. ';
   if (bb && sb && sbIdx !== bbIdx) {
-    line += bbName + ", you're the big blind. " + sbName + ", you're the small blind. ";
+    line += sbName + ', small blind. ' + bbName + ', big blind is up. ';
   } else if (sb) {
     line += sbName + ', blinds posted. ';
   }
-  line += "Let's start. Real cards — deal them out.";
+  line += 'Real cards — deal them out.';
   // Guests get text; only host / table-center phone speaks (pokerSpeak enforces)
   setPokerAnnounce(line, opts.speak !== false);
 }
@@ -5661,6 +5723,7 @@ async function openPokerSetup() {
   };
 
   showScreen('poker-setup');
+  try { unlockPokerVoice(); } catch(_) {}
   loadPokerTablePrefs();
   const codeEl = document.getElementById('poker-setup-code');
   if (codeEl) codeEl.textContent = 'Table ' + roomCode + ' — seat crew, then Deal';
@@ -5907,6 +5970,9 @@ async function startPokerGame(seats, roomCode) {
     startBtn.textContent = 'Seating crew…';
   }
 
+  // Unlock TTS on this tap so iOS will speak blinds / turns
+  try { unlockPokerVoice(); } catch(_) {}
+
   // Ensure escrow exists (openPokerSetup should have created it)
   if (!DEMO_MODE && !state.bet.escrowAddr) {
     try {
@@ -6009,7 +6075,7 @@ async function startPokerGame(seats, roomCode) {
   announcePokerStart(seats, p.sbIdx, p.bbIdx, sbAmt, bbAmt, { speak: true });
   renderPokerTable();
   // Longer delay so the full "Starting poker…" line finishes before first turn call
-  setTimeout(() => pokerNextTurn(), _pokerVoiceOn ? 5200 : 250);
+  setTimeout(() => pokerNextTurn(), _pokerVoiceOn ? 9000 : 250);
 }
 
 function pokerNextTurn() {
@@ -6182,7 +6248,7 @@ function pokerAdvanceStreet(street) {
   announcePokerStreet(street, p.pot);
   renderPokerTable();
   if (street !== 'showdown') {
-    setTimeout(() => pokerNextTurn(), _pokerVoiceOn ? 1600 : 150);
+    setTimeout(() => pokerNextTurn(), _pokerVoiceOn ? 2200 : 150);
   }
 }
 
@@ -6235,7 +6301,7 @@ async function pokerSettle(winnerAddr) {
 
   p.street = 'settled';
   moneyRain(8);
-  const winLine = pokerSeatName(winner) + ' wins ' + p.pot;
+  const winLine = pokerSeatName(winner) + ' wins ' + pokerMoneySpeak(p.pot) + '.';
   setPokerAnnounce(winLine, true);
   showTxFlash('🏆', '$' + p.pot, (winner.name || 'Winner') + ' wins!');
   renderPokerTable();
@@ -6530,9 +6596,20 @@ function _handlePokerMessage(data, opts) {
     p.pot = data.pot;
     const seat = p.seats[p.currentSeat];
     if (seat && !p.isHost) {
-      // Player phones show the call on screen; host already spoke
+      // Player phones show the call; if this is MY seat, speak a local nudge too
       const name = pokerSeatName(seat);
-      setPokerAnnounce(name + ', your action', false);
+      const mine = !!(p.myAddr && seat.addr && seat.addr.toLowerCase() === p.myAddr.toLowerCase());
+      if (mine && _pokerVoiceOn) {
+        const callAmt = Math.max(0, (p.currentBet || 0) - (seat.bet || 0));
+        const nudge = callAmt > 0
+          ? ('Your action. ' + pokerMoneySpeak(callAmt) + ' to call.')
+          : (p.street === 'preflop' && p.bbIdx === p.currentSeat
+              ? 'Big blind is up. Check or raise.'
+              : 'Your action. Check or bet.');
+        setPokerAnnounce(nudge, true, true);
+      } else {
+        setPokerAnnounce(name + ', your action', false);
+      }
     }
     renderPokerTable();
     if (data.addr && p.myAddr && data.addr.toLowerCase() === p.myAddr.toLowerCase()) {
