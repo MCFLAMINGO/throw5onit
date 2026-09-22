@@ -348,26 +348,47 @@ function showScreen(id) {
   // Hard-cancel in-flight transitions so rapid taps don't stack glitchy fades
   if (_screenTimer) { clearTimeout(_screenTimer); _screenTimer = null; }
   if (id !== 'qr') { try { stopFundBalancePoll(); } catch(_) {} }
-  document.querySelectorAll('.screen.active, .screen.exit').forEach(el => {
-    el.classList.remove('active', 'exit');
-  });
+
   const next = document.getElementById('screen-' + id);
   if (!next) return;
-  // Double rAF = paint-clean enter (avoids opacity flicker)
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      next.classList.add('active');
-      currentScreen = id;
-      if (id === 'first-scan') {
-        stopFirstScan();
-        const startBtn = document.getElementById('btn-first-scan-start');
-        if (startBtn) { startBtn.style.display = ''; startBtn.textContent = 'Tap to Open Camera'; }
-        const status = document.getElementById('first-scan-status');
-        if (status) status.textContent = '';
-      }
-      if (id === 'wallet') renderCrew();
-    });
+
+  // Mark outgoing screens for a clean exit frame, then clear
+  document.querySelectorAll('.screen.active').forEach(el => {
+    if (el !== next) el.classList.add('exit');
   });
+
+  _screenTimer = setTimeout(() => {
+    document.querySelectorAll('.screen.active, .screen.exit').forEach(el => {
+      el.classList.remove('active', 'exit');
+    });
+    next.classList.add('active');
+    currentScreen = id;
+    try { next.scrollTop = 0; } catch(_) {}
+    if (id === 'first-scan') {
+      try { stopFirstScan(); } catch(_) {}
+      const startBtn = document.getElementById('btn-first-scan-start');
+      if (startBtn) { startBtn.style.display = ''; startBtn.textContent = 'Tap to Open Camera'; }
+      const status = document.getElementById('first-scan-status');
+      if (status) status.textContent = '';
+    }
+    if (id === 'wallet') {
+      try { renderCrew(); } catch(_) {}
+      try { renderWalletUI(); } catch(_) {}
+    }
+    _screenTimer = null;
+  }, 40);
+}
+
+/** Prevent double-taps on async actions — keeps demos from double-sending. */
+const _busyLocks = new Set();
+async function withBusy(key, fn) {
+  if (_busyLocks.has(key)) return;
+  _busyLocks.add(key);
+  try {
+    return await fn();
+  } finally {
+    _busyLocks.delete(key);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -1230,7 +1251,7 @@ function initMyProfile() {
     const p    = getSelfProfile();
     const name = p.name || getHandle() || '';
     const addr = state.account?.address || '';
-    if (!addr) { alert('Create a wallet first'); return; }
+    if (!addr) { showError('Create a wallet first'); return; }
     const params = new URLSearchParams();
     params.set('addName', name);
     params.set('addAddr', addr);
@@ -1447,21 +1468,32 @@ function closePointsModal() {
 }
 
 function renderWalletUI() {
-  const total = state.total;
-  document.getElementById('balance-display').textContent = '$' + total.toFixed(2);
+  const total = Number(state.total) || 0;
+  const balEl = document.getElementById('balance-display');
+  if (balEl) {
+    const next = '$' + total.toFixed(2);
+    if (balEl.textContent !== next) {
+      balEl.textContent = next;
+      balEl.classList.remove('bal-tick');
+      void balEl.offsetWidth;
+      balEl.classList.add('bal-tick');
+    }
+  }
   const tokenParts = [];
-  if (state.pathUSD > 0) tokenParts.push(`${state.pathUSD.toFixed(2)} pathUSD`);
-  if (state.usdc    > 0) tokenParts.push(`${state.usdc.toFixed(2)} USDC.e`);
-  document.getElementById('balance-tokens').textContent =
-    tokenParts.length ? tokenParts.join(' + ') : '0.00 pathUSD';
+  if (state.pathUSD > 0) tokenParts.push(`${Number(state.pathUSD).toFixed(2)} pathUSD`);
+  if (state.usdc    > 0) tokenParts.push(`${Number(state.usdc).toFixed(2)} USDC.e`);
+  const tokEl = document.getElementById('balance-tokens');
+  if (tokEl) tokEl.textContent = tokenParts.length ? tokenParts.join(' + ') : '0.00 pathUSD';
 
   const pct = Math.min((total / CAP_USD) * 100, 100);
-  document.getElementById('cap-bar-fill').style.width = pct + '%';
-  document.getElementById('cap-label').textContent = `$${total.toFixed(0)} of $${CAP_USD}`;
+  const fill = document.getElementById('cap-bar-fill');
+  if (fill) fill.style.width = pct + '%';
+  const capLabel = document.getElementById('cap-label');
+  if (capLabel) capLabel.textContent = `$${total.toFixed(0)} of $${CAP_USD}`;
 
   // Always keep THROW enabled — balance may be loading
-  document.getElementById('btn-throw').style.opacity = '1';
-  document.getElementById('btn-throw').disabled = false;
+  const throwBtn = document.getElementById('btn-throw');
+  if (throwBtn) { throwBtn.style.opacity = '1'; throwBtn.disabled = false; }
 
   // Render sponsor strips on wallet screen
   try { renderSponsorStrips(); } catch(_) {}
@@ -1469,10 +1501,12 @@ function renderWalletUI() {
   // Empty / low pocket → push Load for tonight
   const loadBtn = document.getElementById('btn-load-tonight');
   if (loadBtn) {
-    const empty = (state.total || 0) < 1;
+    const empty = total < 1;
     loadBtn.classList.toggle('hidden', !empty || currentScreen !== 'wallet');
-    // Always bind
-    loadBtn.onclick = () => openAddCashScreen();
+    if (!loadBtn._wired) {
+      loadBtn._wired = true;
+      loadBtn.onclick = () => openAddCashScreen();
+    }
   }
   updateFundBalanceChip();
 }
@@ -2016,6 +2050,7 @@ function renderQR(addr) {
 /* ── Proximity throw: fires Sonic + Gesture + MQTT simultaneously ── */
 let _throwInFlight = false;
 async function executeProximityThrow(target) {
+  return withBusy('throw', async () => {
   if (_throwInFlight) return;
   if (!target || !target.addr) {
     showToast('Select a friend first');
@@ -2053,12 +2088,13 @@ async function executeProximityThrow(target) {
     setTimeout(() => { hideTxFlash(); showScreen('wallet'); }, 1800);
   } catch (e) {
     hideTxFlash();
-    showToast('Throw failed: ' + (e.message || String(e)));
+    showError('Throw failed: ' + (e.message || String(e)));
     showScreen('wallet');
   } finally {
     _throwInFlight = false;
     state.pendingThrowId = null;
   }
+  });
 }
 
 function openThrowScreen(preselect) {
@@ -2598,11 +2634,12 @@ function openBetSetup() {
 }
 
 async function startPot() {
+  return withBusy('start-pot', async () => {
   // Texas Hold'em branches off into its own setup flow
   if (state.bet.structure === 'texas-holdem') {
     openPokerSetup().catch(e => {
       console.error('openPokerSetup failed', e);
-      alert('Could not open table: ' + (e.message || e));
+      showError('Could not open table: ' + (e.message || e));
     });
     return;
   }
@@ -2688,7 +2725,7 @@ async function startPot() {
       addPlayerToPot(state.account.address, 'You (host)', state.bet.total, 'yes');
       await refreshBalances();
     } catch(e) {
-      alert('Could not open bet: ' + (e.shortMessage || e.message));
+      showError('Could not open bet: ' + (e.shortMessage || e.message));
       state.bet.active = false;
       try { localStorage.removeItem('throw_active_bet'); } catch(_) {}
       return;
@@ -2697,6 +2734,7 @@ async function startPot() {
 
   showScreen('pot');
   renderPotScreen();
+  });
 }
 function renderPotScreen() {
   const betText = document.getElementById('pot-bet-text');
@@ -2966,7 +3004,7 @@ async function settleBet(hostWon) {
     try { clearGlobalBet(); } catch(_) {}
     try { localStorage.removeItem('throw_active_bet'); } catch(_) {}
     state.bet.active = false;
-    alert('Settlement failed: ' + (e.shortMessage || e.message));
+    showError('Settlement failed: ' + (e.shortMessage || e.message));
   }
 }
 
@@ -3763,10 +3801,46 @@ function saveContacts(arr) {
 function showToast(msg, durationMs) {
   const el = document.getElementById('throw-toast');
   if (!el) return;
-  el.textContent = msg;
-  el.classList.add('visible');
+  el.textContent = String(msg || '');
+  el.classList.remove('show');
+  // Retrigger transition even if already showing
+  void el.offsetWidth;
+  el.classList.add('show');
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => el.classList.remove('visible'), durationMs || 2500);
+  showToast._t = setTimeout(() => el.classList.remove('show'), durationMs || 2600);
+}
+
+function showError(msg) {
+  showToast(msg, 3600);
+  try { if (navigator.vibrate) navigator.vibrate([30, 40, 30]); } catch(_) {}
+}
+
+function openHistorySheet() {
+  const sheet = document.getElementById('history-sheet');
+  const list = document.getElementById('history-sheet-list');
+  if (!sheet || !list) {
+    if (!state.txHistory.length) showToast('No transactions yet');
+    else showToast(state.txHistory.slice(0, 3).map(t =>
+      (t.type === 'sent' ? '→' : '←') + ' $' + Number(t.amount).toFixed(2)
+    ).join('  ·  '), 3200);
+    return;
+  }
+  const rows = (state.txHistory || []).slice(0, 12);
+  if (!rows.length) {
+    list.innerHTML = '<div class="history-empty">No transactions yet — throw someone cash.</div>';
+  } else {
+    list.innerHTML = rows.map(t => {
+      const dir = t.type === 'sent' ? 'Sent' : 'Received';
+      const amt = '$' + Number(t.amount || 0).toFixed(2);
+      const when = t.ts ? new Date(t.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      return `<div class="history-row"><span class="h-amt">${dir} ${amt}</span><span class="h-meta">${when}</span></div>`;
+    }).join('');
+  }
+  sheet.classList.remove('hidden');
+}
+
+function closeHistorySheet() {
+  document.getElementById('history-sheet')?.classList.add('hidden');
 }
 
 function resizeImageToDataUrl(file, maxPx, quality, cb) {
@@ -4551,7 +4625,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const acc = await importWallet(pk);
       routeAfterWallet(acc);
     } catch (e) {
-      alert('Invalid key: ' + e.message);
+      showError('Invalid key: ' + e.message);
     }
   };
 
@@ -4700,14 +4774,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => { window.location.reload(true); }, 400);
   };
 
-  document.getElementById('btn-history').onclick = () => {
-    // Simple history toast — could expand to full screen
-    if (!state.txHistory.length) { alert('No transactions yet.'); return; }
-    const lines = state.txHistory.slice(0, 5).map(t =>
-      `${t.type === 'sent' ? '→' : '←'} $${t.amount.toFixed(2)} · ${new Date(t.ts).toLocaleTimeString()}`
-    ).join('\n');
-    alert('Recent:\n' + lines);
-  };
+  document.getElementById('btn-history').onclick = () => openHistorySheet();
+  document.getElementById('history-sheet-close')?.addEventListener('click', closeHistorySheet);
+  document.getElementById('history-sheet')?.addEventListener('click', (e) => {
+    if (e.target.id === 'history-sheet') closeHistorySheet();
+  });
 
   /* ── Throw screen ── */
   document.getElementById('throw-back').onclick = () => showScreen('wallet');
@@ -4732,7 +4803,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (pokerStart) pokerStart.onclick = () => {
     startPokerGame(state.poker?.seats || [], state.poker?.roomCode).catch(e => {
       console.error('startPokerGame failed', e);
-      alert('Could not start: ' + (e.message || e));
+      showError('Could not start: ' + (e.message || e));
       pokerStart.disabled = false;
       pokerStart.textContent = 'Start Game';
     });
@@ -5453,7 +5524,7 @@ function _pokerActionKey(data) {
 
 async function openPokerSetup() {
   const myAddr = state.account?.address;
-  if (!myAddr) { alert('Wallet not ready'); return; }
+  if (!myAddr) { showError('Wallet not ready'); return; }
 
   // Create a fresh escrow wallet for the pot — same model as regular bets.
   // Without this, live blinds/calls/raises have nowhere to land.
@@ -5507,7 +5578,7 @@ async function openPokerSetup() {
       });
     }
   } catch (e) {
-    alert('Could not open table: ' + (e.message || e));
+    showError('Could not open table: ' + (e.message || e));
     return;
   }
 
@@ -5784,7 +5855,7 @@ async function startPokerGame(seats, roomCode) {
       state.bet.escrowAddr = w.address;
       p.escrowAddr = w.address;
     } catch (e) {
-      alert('Could not create pot wallet: ' + (e.message || e));
+      showError('Could not create pot wallet: ' + (e.message || e));
       if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start Game'; }
       return;
     }
@@ -5931,7 +6002,7 @@ function pokerHandleAction(action, amount) {
     } else {
       const escrow = p.escrowAddr || state.bet?.escrowAddr;
       if (!escrow) {
-        alert('Pot wallet not set up — cannot send live funds. Return to lobby.');
+        showError('Pot wallet not set up — go back and reopen the table.');
         return;
       }
       sendEscrowDeposit(escrow, add).catch(e => console.error('poker escrow send failed', e));
@@ -6094,7 +6165,7 @@ async function pokerSettle(winnerAddr) {
       } catch (e) { console.warn('poker payout failed', e); }
       try { await _refillExecutor(escrowPK, fee); } catch(_) {}
     } else {
-      alert('Escrow key missing — cannot pay out. Start a new table.');
+      showError('Escrow key missing — start a new table.');
     }
   }
 

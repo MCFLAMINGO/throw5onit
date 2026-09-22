@@ -39,13 +39,16 @@
 </head>
 <body>
 <!-- BOOT LOADER — shows instantly, hidden once wallet check resolves -->
-<div id="boot-loader" style="position:fixed;inset:0;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:9999;">
-  <svg width="72" height="72" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="72" height="72" rx="18" fill="#1a1a1a"/>
-    <text x="36" y="50" text-anchor="middle" font-size="38" font-family="-apple-system,BlinkMacSystemFont,sans-serif">💸</text>
-  </svg>
-  <span style="color:#fff;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:15px;font-weight:700;letter-spacing:0.18em;opacity:0.85;">THROW</span>
+<div id="boot-loader" style="position:fixed;inset:0;background:#050505;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:9999;">
+  <div style="width:64px;height:64px;border-radius:18px;background:#141414;border:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;box-shadow:0 12px 40px rgba(0,0,0,0.45)">
+    <img src="icon-192.png" width="40" height="40" alt="" style="border-radius:10px" onerror="this.style.display='none'" />
+  </div>
+  <span style="color:#fff;font-family:'Space Grotesk',-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;font-weight:700;letter-spacing:0.22em;opacity:0.9;">THROW</span>
+  <div style="width:36px;height:3px;border-radius:99px;background:rgba(255,255,255,0.08);overflow:hidden">
+    <div style="width:40%;height:100%;background:#00e5a0;border-radius:99px;animation:bootBar 1s ease-in-out infinite alternate"></div>
+  </div>
 </div>
+<style>@keyframes bootBar{from{transform:translateX(-10%)}to{transform:translateX(160%)}}</style>
 
 <!-- DEMO MODE BANNER -->
 <div id="demo-banner" class="demo-banner hidden">
@@ -1011,6 +1014,15 @@
 <script src="room.js"></script>
 <script src="claim.js"></script>
 <div class="throw-toast" id="throw-toast"></div>
+
+<!-- History sheet -->
+<div id="history-sheet" class="history-sheet hidden" role="dialog" aria-label="Recent activity">
+  <div class="history-sheet-card">
+    <div class="history-sheet-title">RECENT ACTIVITY</div>
+    <div class="history-sheet-list" id="history-sheet-list"></div>
+    <button type="button" class="btn-primary" id="history-sheet-close" style="width:100%;margin-top:14px">Done</button>
+  </div>
+</div>
 
 <!-- ═══ MY PROFILE MODAL ════════════════════════════════════════════ -->
 <div id="my-profile-modal" class="my-profile-modal hidden">
