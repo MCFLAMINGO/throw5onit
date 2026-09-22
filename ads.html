@@ -178,7 +178,7 @@
 <div class="page">
   <div class="hero">
     <h1>Sell the room.<br/>Fill unsold with clicks.</h1>
-    <p>Price ad space by venue or city. Direct sponsors win nearby. Empty slots fill from Coinzilla — the click network already verified on THROW.</p>
+    <p>Price ad space by venue or city. Push in-store deals with a redeem QR to nearby phones — or run brand splash. Empty slots fill from Coinzilla.</p>
   </div>
 
   <div class="tabs">
@@ -206,7 +206,7 @@
         </div>
         <p style="font-size:13px;color:var(--text2);line-height:1.55">
           <strong style="color:var(--text)">Priority:</strong> venue pin → city/geo radius → global direct → Coinzilla fill.<br/><br/>
-          Phones near a zone see that sponsor on splash, orb, and strips. Tap goes through THROW click tracking, then to the buyer’s URL.
+          Phones near a zone see that sponsor on splash, orb, and strips. In-store deals open a push sheet with a cashier QR. Brand taps go through THROW click tracking to the buyer’s URL.
         </p>
         <button class="btn btn-ghost" style="margin-top:14px;width:100%" onclick="openAdModal()">+ Sell a slot</button>
       </div>
@@ -337,7 +337,23 @@
     <div class="field">
       <label>Click URL (where taps go)</label>
       <input id="a-url" placeholder="https://…" />
-      <div class="field-hint">Tracked via /api/ads/click then redirected here</div>
+      <div class="field-hint">Tracked via /api/ads/click then redirected here. For in-store deals, leave blank or use your menu URL — phones show a redeem QR instead of a web ad.</div>
+    </div>
+    <div class="field">
+      <label>Placement type</label>
+      <select id="a-kind">
+        <option value="brand">Brand / awareness</option>
+        <option value="deal">In-store deal (QR redeem)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Deal offer (shown on phone push)</label>
+      <input id="a-deal-text" maxlength="80" placeholder="Student night: free fries with any throw" />
+    </div>
+    <div class="field">
+      <label>Deal code (cashier / POS)</label>
+      <input id="a-deal-code" maxlength="24" placeholder="THROWFRIES" style="text-transform:uppercase" />
+      <div class="field-hint">Pushed live to nearby phones. Students show the QR + code in store.</div>
     </div>
     <div class="row-2">
       <div class="field">
@@ -594,6 +610,9 @@ function openAdModal(id) {
   document.getElementById('a-tagline').value = ad?.tagline || '';
   document.getElementById('a-logo').value = ad?.logoUrl || '';
   document.getElementById('a-url').value = ad?.url || '';
+  document.getElementById('a-kind').value = ad?.kind || (ad?.dealText ? 'deal' : 'brand');
+  document.getElementById('a-deal-text').value = ad?.dealText || '';
+  document.getElementById('a-deal-code').value = ad?.dealCode || '';
   document.getElementById('a-cpc').value = ad?.bidCpc ?? 0.5;
   document.getElementById('a-status').value = ad?.status || 'active';
   document.getElementById('ad-overlay').classList.add('open');
@@ -607,15 +626,22 @@ function saveAd() {
   if (!zone) { toast('Zone missing', 'err'); return; }
   const name = document.getElementById('a-name').value.trim();
   if (!name) { toast('Business name required', 'err'); return; }
+  const kind = document.getElementById('a-kind').value || 'brand';
+  const dealText = document.getElementById('a-deal-text').value.trim();
+  const dealCode = document.getElementById('a-deal-code').value.trim().toUpperCase();
   const ad = {
     id, name,
     tagline: document.getElementById('a-tagline').value.trim(),
     logoUrl: document.getElementById('a-logo').value.trim(),
     url: document.getElementById('a-url').value.trim(),
+    kind,
+    isDeal: kind === 'deal' || !!dealText,
+    dealText,
+    dealCode,
     bidCpc: Number(document.getElementById('a-cpc').value) || 0,
     status: document.getElementById('a-status').value,
     paid: true,
-    placements: ['splash', 'orb', 'strips'],
+    placements: kind === 'deal' ? ['splash', 'orb', 'strips', 'deal-push'] : ['splash', 'orb', 'strips'],
   };
   // remove from any zone first
   for (const z of state.zones) z.ads = (z.ads || []).filter(a => a.id !== id);

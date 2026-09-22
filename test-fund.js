@@ -61,5 +61,23 @@ console.log('4) ?fund=1 deep link');
   assert(parseFundDeepLink('') === false, 'empty');
 }
 
+
+const fs = require('fs');
+const path = require('path');
+const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+const app = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+
+console.log('5) Ask a friend leads the Load screen');
+{
+  assert(html.includes('Ask a friend to load you'), 'ask-a-friend headline');
+  assert(html.includes('id="btn-ask-friend-load"'), 'ask CTA button');
+  assert(html.includes('id="btn-sms-friend"'), 'sms CTA');
+  const ask = html.indexOf('Ask a friend to load you');
+  const relay = html.indexOf('Relay', ask);
+  assert(ask >= 0 && relay > ask, 'ask copy before Relay');
+  assert(app.includes('askFriendToLoadYou') || app.includes('buildAskFriendLoadText'), 'ask-friend helpers in app');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
+

@@ -71,5 +71,40 @@ console.log('4) Empty inventory → network fill path');
   assert(picked.length === 0, 'empty → Coinzilla fill eligible');
 }
 
+
+function isDealAd(item) {
+  if (!item) return false;
+  if (item.kind === 'deal' || item.type === 'deal' || item.isDeal) return true;
+  if (item.dealText || item.dealCode) return true;
+  return false;
+}
+function buildDealRedeemPayload(deal) {
+  const code = deal.dealCode || deal.code || '';
+  if (deal.url) {
+    const u = String(deal.url);
+    return code && u.indexOf('code=') < 0 ? (u + (u.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(code)) : u;
+  }
+  return 'throw://deal?biz=' + encodeURIComponent(deal.name || '') + '&code=' + encodeURIComponent(code);
+}
+
+console.log('5) In-store deal ads');
+{
+  assert(isDealAd({ kind: 'deal', name: 'Pub' }), 'kind=deal');
+  assert(isDealAd({ name: 'Pub', dealText: '2-for-1' }), 'dealText');
+  assert(!isDealAd({ name: 'Nike' }), 'brand not deal');
+  const p = buildDealRedeemPayload({ name: 'Pub', dealCode: 'WINGS', url: 'https://pub.test/x' });
+  assert(p.includes('code=WINGS'), 'url gets code');
+}
+
+const fs = require('fs');
+const adsHtml = fs.readFileSync(require('path').join(__dirname, 'ads.html'), 'utf8');
+console.log('6) Ads admin deal fields');
+{
+  assert(adsHtml.includes('id="a-deal-text"'), 'deal text field');
+  assert(adsHtml.includes('id="a-deal-code"'), 'deal code field');
+  assert(adsHtml.includes('value="deal"'), 'deal kind option');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
+

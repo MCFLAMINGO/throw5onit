@@ -416,7 +416,7 @@
       <div class="action-icon">
         <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="13" stroke="white" stroke-width="2.5"/><circle cx="20" cy="20" r="4" fill="white"/><path d="M20 7 L20 11M20 29 L20 33M7 20 L11 20M29 20 L33 20" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
       </div>
-      <span>POT</span>
+      <span>IOU</span>
     </button>
   </div>
 
@@ -614,14 +614,15 @@
   </div>
 </div>
 
-<!-- ═══ SCREEN: OPEN BET (HOST SETUP) ═══════════════════════════════════════ -->
+<!-- ═══ SCREEN: IOU / OPEN BET (HOST SETUP) ═════════════════════════════════ -->
 <div id="screen-bet-setup" class="screen">
   <button type="button" class="back-btn" id="bet-setup-back">← Wallet</button>
   <div class="bet-setup-ui">
-    <div class="screen-label">OPEN A BET</div>
+    <div class="screen-label">IOU &amp; POTS</div>
+    <p class="fee-notice" style="margin-top:-6px;opacity:0.9">Front cash, split a tab, or open a bet — same pot, settle when it's done.</p>
 
     <input id="bet-description" class="bet-input" type="text"
-      placeholder="LeBron dunks before he shoots…" maxlength="80" />
+      placeholder="Pizza · Uber · LeBron dunks…" maxlength="80" />
 
     <div class="field-label">AMOUNT PER PLAYER</div>
     <div class="bet-amounts-scroll" style="display:flex;flex-direction:row;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:4px 2px 8px;width:100%;align-self:stretch;min-width:0;">
@@ -639,9 +640,13 @@
     </div>
     <div class="fee-notice">$0.10 service fee per throw &mdash; players put in $4.90, $9.90, etc.</div>
 
-    <div class="field-label">PAYOUT</div>
+    <div class="field-label">HOW IT SETTLES</div>
     <div class="structure-list">
-      <button class="structure-card active" data-struct="winner-all">
+      <button class="structure-card active" data-struct="iou">
+        <div class="struct-name">IOU / SPLIT THE TAB</div>
+        <div class="struct-desc">They throw in what they owe → you settle when paid · or forgive and send it back</div>
+      </button>
+      <button class="structure-card" data-struct="winner-all">
         <div class="struct-name">WINNER TAKES ALL</div>
         <div class="struct-desc">You win → keep the pot &nbsp;|&nbsp; You lose → they split it</div>
       </button>
@@ -838,34 +843,40 @@
   <button type="button" class="back-btn" id="qr-back">← Wallet</button>
   <div class="qr-ui fund-ui">
     <div class="screen-label">LOAD FOR TONIGHT</div>
-    <p class="fund-hero">How money gets on THROW: a friend throws it, you fund via Tempo, or try demo cash. Cap $50 — like a night wallet.</p>
+    <p class="fund-hero">Broke? Ask a friend to load you. Cap $50 — like a night wallet.</p>
 
     <div class="fund-balance-chip" id="fund-balance-chip">Empty pocket — load up to $50</div>
     <button type="button" class="btn-primary fund-done-btn hidden" id="btn-fund-done">I'm loaded — throw</button>
 
-    <!-- PATH A: friend (best for unbanked / night energy) -->
-    <div class="fund-card">
-      <div class="fund-card-kicker">Easiest · no bank needed</div>
-      <div class="fund-card-title">Get thrown cash</div>
-      <div class="fund-card-body">A friend with dollars on THROW flicks you cash, or sends a claim link. Show this QR so they can aim.</div>
+    <!-- PATH A: Ask a friend (primary for campus / broke students) -->
+    <div class="fund-card fund-card-accent fund-card-friend">
+      <div class="fund-card-kicker">Best for broke nights</div>
+      <div class="fund-card-title">Ask a friend to load you</div>
+      <div class="fund-card-body">Text or share your link — they open THROW and flick you cash. Or show this QR so they can aim.</div>
       <canvas id="qr-canvas" width="160" height="160"></canvas>
       <div class="qr-address" id="qr-address"></div>
-      <button class="btn-primary fund-step-btn" id="btn-copy-addr">Copy my address</button>
-      <div class="fund-copied-toast hidden" id="fund-copied-toast">Copied — paste it in Tempo Wallet or share it</div>
-      <button class="btn-ghost fund-share-btn" id="btn-share-receive" style="margin-top:8px;width:100%">Share receive link</button>
+      <button class="btn-primary fund-step-btn" id="btn-ask-friend-load">Ask a friend to load you</button>
+      <div class="fund-ask-row">
+        <button class="btn-ghost fund-share-btn" id="btn-share-receive">Share link</button>
+        <a class="btn-ghost fund-share-btn" id="btn-sms-friend" href="#">Text them</a>
+      </div>
+      <button class="btn-ghost fund-step-btn" id="btn-copy-addr" style="margin-top:8px;width:100%">Copy my address</button>
+      <div class="fund-copied-toast hidden" id="fund-copied-toast">Copied — paste it or share it</div>
     </div>
 
-    <!-- PATH B: Tempo onramp / bridge -->
-    <div class="fund-card fund-card-accent">
-      <div class="fund-card-kicker">Real dollars · Tempo chain</div>
-      <div class="fund-card-title">Fund via Tempo Wallet</div>
+    <!-- PATH B: Tempo / card / bridge (secondary) -->
+    <details class="fund-card fund-card-details">
+      <summary>
+        <span class="fund-card-kicker">Have a card or crypto?</span>
+        <span class="fund-card-title">Fund yourself · Tempo / Relay / Across</span>
+      </summary>
       <div class="fund-card-body">
-        Anyone can send dollars your way — USD onramp, USDC, USDT from other chains — then it lands on Tempo as spendable stablecoin in this wallet.
+        Card, bank, or USDC/USDT from other chains → Tempo → this wallet.
         <ol class="fund-olist">
-          <li>Copy your THROW address (or tap a bridge below — address is prefilled)</li>
-          <li><strong>Relay</strong>: send USDC/USDT from Ethereum, Base, Solana, etc. → Tempo</li>
-          <li>Or open Tempo Wallet → card / bank → send <strong>USDC.e</strong> or <strong>pathUSD</strong> here</li>
-          <li>Come back — this screen polls until funds show</li>
+          <li>Copy your THROW address (or tap a bridge — address is prefilled)</li>
+          <li><strong>Relay</strong>: USDC/USDT from Ethereum, Base, Solana… → Tempo</li>
+          <li>Or Tempo Wallet → card / bank → send <strong>USDC.e</strong> or <strong>pathUSD</strong> here</li>
+          <li>This screen polls until funds show</li>
         </ol>
       </div>
       <button class="tempo-wallet-btn" id="btn-open-tempo">
@@ -877,9 +888,9 @@
         <a class="fund-bridge-link" id="btn-bridge-across" href="https://app.across.to/tempo" target="_blank" rel="noopener">Across bridge</a>
       </div>
       <div class="fund-card-body" style="margin-top:8px;opacity:0.75;font-size:12px">
-        THROW spends <strong>USDC.e</strong> + <strong>pathUSD</strong> on Tempo. Bridged USDT/USDC is routed into those — you don't need a custom router contract.
+        THROW spends <strong>USDC.e</strong> + <strong>pathUSD</strong> on Tempo.
       </div>
-    </div>
+    </details>
 
     <!-- PATH C: demo -->
     <div class="fund-card">
@@ -950,7 +961,7 @@
     </div>
     <div class="contact-overlay-actions">
       <button class="btn-primary contact-throw-btn" id="btn-contact-throw">THROW →</button>
-      <button class="btn-ghost" id="btn-contact-bet">OPEN BET</button>
+      <button class="btn-ghost" id="btn-contact-bet">IOU / BET</button>
     </div>
     <button class="btn-delete-contact" id="btn-contact-delete">Remove contact</button>
   </div>
@@ -1043,6 +1054,20 @@
   </div>
 </div>
 
+
+<!-- ═══ DEAL PUSH — local business in-store QR ═══════════════════════════ -->
+<div id="deal-push" class="deal-push hidden" role="dialog" aria-label="In-store deal">
+  <div class="deal-push-card">
+    <button type="button" class="deal-push-close" id="deal-push-close" aria-label="Close">×</button>
+    <div class="deal-push-kicker">Nearby · in-store</div>
+    <div class="deal-push-name" id="deal-push-name">Local deal</div>
+    <div class="deal-push-offer" id="deal-push-offer">Show this QR at the counter</div>
+    <canvas id="deal-push-qr" width="160" height="160" class="deal-push-qr"></canvas>
+    <div class="deal-push-code" id="deal-push-code">Scan in store to unlock</div>
+    <p class="deal-push-hint">Local businesses push tonight’s deals here — redeem in person, not a web ad.</p>
+  </div>
+</div>
+
 <!-- ═══ MY PROFILE MODAL ════════════════════════════════════════════ -->
 <div id="my-profile-modal" class="my-profile-modal hidden">
   <div class="my-profile-inner">
@@ -1052,7 +1077,7 @@
       <div class="my-profile-avatar" id="my-profile-avatar"><span id="my-profile-initials">?</span></div>
       <label class="my-profile-photo-btn" id="my-profile-photo-label">
         <input type="file" id="my-profile-photo-input" accept="image/*" style="display:none">
-        📷 Change photo
+        Change photo
       </label>
     </div>
     <div class="my-profile-fields">
@@ -1061,6 +1086,14 @@
       <label class="my-profile-field-label">Phone (optional)</label>
       <input class="my-profile-field-input" id="my-profile-phone" type="tel" placeholder="+1 555 000 0000" autocomplete="tel">
       <p class="my-profile-hint">Phone is only shared when you share your link. It never goes to any server — stored on your phone only.</p>
+      <label class="my-profile-field-label">School / team colors</label>
+      <p class="my-profile-hint" style="margin-bottom:6px">Download a pic of your college or favorite team — THROW paints the wallet from its colors.</p>
+      <div class="theme-swatch-row" id="theme-swatch-row" aria-hidden="true"></div>
+      <label class="my-profile-photo-btn theme-photo-btn" id="theme-photo-label">
+        <input type="file" id="theme-photo-input" accept="image/*" style="display:none">
+        Upload college / team photo
+      </label>
+      <button type="button" class="btn-ghost" id="theme-reset-btn" style="width:100%;margin-top:6px;display:none">Reset to default mint</button>
     </div>
     <button class="btn-primary" id="my-profile-save">Save</button>
     <button class="btn-ghost" id="my-profile-share" style="margin-top:8px">Share My Card</button>
