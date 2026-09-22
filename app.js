@@ -254,7 +254,7 @@ function relayThrow(payload) {
   }).catch(() => {});
 }
 
-// Tempo Points — local tally of on-chain throws (airdrop eligibility tracking)
+// THROW session tally — not an official Tempo points/airdrop program
 const points = {
   throws: 0,
   totalVolume: 0,   // USD
@@ -4412,11 +4412,27 @@ function updateFundBalanceChip() {
   if (done) done.classList.toggle('hidden', (state.total || 0) < 1);
 }
 
+/** Prefill Relay / Across with this THROW address so any-chain USDC/USDT lands here. */
+function updateFundBridgeLinks(addr) {
+  if (!addr) return;
+  const relay = document.getElementById('btn-bridge-relay');
+  const across = document.getElementById('btn-bridge-across');
+  // Relay: bridge into Tempo USDC with destination wallet set
+  if (relay) {
+    relay.href = 'https://relay.link/bridge/tempo?toCurrency=usdc&toAddress=' + encodeURIComponent(addr);
+  }
+  // Across: Tempo destination + recipient when supported
+  if (across) {
+    across.href = 'https://app.across.to/tempo?recipient=' + encodeURIComponent(addr);
+  }
+}
+
 function openAddCashScreen() {
   showScreen('qr');
   _fundArrivalToasted = false;
   const addr = state.account?.address || '';
   renderQR(addr);
+  try { updateFundBridgeLinks(addr); } catch(_) {}
   const pk = _storedPK || localStorage.getItem('throw_pk') || 'Not found';
   const pkEl = document.getElementById('backup-key-display');
   if (pkEl) pkEl.textContent = pk;
