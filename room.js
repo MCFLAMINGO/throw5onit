@@ -419,6 +419,88 @@ function clearGlobalBet() {
   }
 }
 
+/* ── GLOBAL POKER TABLE DISCOVERY (point + THROW to sit) ── */
+const GLOBAL_POKER_TOPIC = 'throw5/poker/open';
+let globalPokerClient = null;
+
+/** Host publishes an open Hold'em lobby so nearby phones can THROW-to-join. */
+function publishGlobalPokerTable(tableData) {
+  const msg = JSON.stringify({
+    event:     'poker_table_open',
+    hostAddr:  tableData.hostAddr,
+    hostName:  tableData.hostName || 'Host',
+    roomCode:  tableData.roomCode,
+    escrowAddr: tableData.escrowAddr || null,
+    blinds:    tableData.blinds || { sb: 1, bb: 2 },
+    seatsOpen: tableData.seatsOpen != null ? tableData.seatsOpen : 5,
+    demo:      !!tableData.demo,
+    ts:        Date.now(),
+  });
+  if (room.client) {
+    room.client.publish(GLOBAL_POKER_TOPIC, msg, { qos: 1, retain: true });
+  } else {
+    _globalPublish(GLOBAL_POKER_TOPIC, msg, { qos: 1, retain: true });
+  }
+}
+
+/** Player phones — discover an open Hold'em table without scanning a QR. */
+function scanForPokerTables(cb, timeoutMs) {
+  timeoutMs = timeoutMs || 5000;
+  if (globalPokerClient) {
+    try { globalPokerClient.end(true); } catch(_) {}
+    globalPokerClient = null;
+  }
+  const clientId = 'throw_poker_scan_' + Math.random().toString(36).slice(2, 10);
+  globalPokerClient = mqtt.connect(MQTT_BROKER, {
+    clientId,
+    clean: true,
+    connectTimeout: 8000,
+    reconnectPeriod: 0,
+  });
+  let fired = false;
+  const timer = setTimeout(() => {
+    if (!fired) { fired = true; cb(null); }
+    stopScanForPokerTables();
+  }, timeoutMs);
+
+  globalPokerClient.on('connect', () => {
+    globalPokerClient.subscribe(GLOBAL_POKER_TOPIC, { qos: 1 });
+  });
+  globalPokerClient.on('message', (_topic, message) => {
+    if (fired) return;
+    const raw = message.toString();
+    if (!raw) return;
+    try {
+      const data = JSON.parse(raw);
+      if (data.roomCode && data.hostAddr) {
+        fired = true;
+        clearTimeout(timer);
+        stopScanForPokerTables();
+        cb(data);
+      }
+    } catch(_) {}
+  });
+  globalPokerClient.on('error', () => {
+    if (!fired) { fired = true; clearTimeout(timer); cb(null); }
+    stopScanForPokerTables();
+  });
+}
+
+function stopScanForPokerTables() {
+  if (globalPokerClient) {
+    try { globalPokerClient.end(true); } catch(_) {}
+    globalPokerClient = null;
+  }
+}
+
+function clearGlobalPokerTable() {
+  if (room.client) {
+    room.client.publish(GLOBAL_POKER_TOPIC, '', { qos: 1, retain: true });
+  } else {
+    _globalPublish(GLOBAL_POKER_TOPIC, '', { qos: 1, retain: true });
+  }
+}
+
 function _globalPublish(topic, msg, opts) {
   const clientId = 'throw_pub_' + Math.random().toString(36).slice(2, 10);
   const c = mqtt.connect(MQTT_BROKER, { clientId, clean: true, connectTimeout: 6000, reconnectPeriod: 0 });

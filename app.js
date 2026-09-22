@@ -374,6 +374,7 @@ function showScreen(id) {
     if (id === 'wallet') {
       try { renderCrew(); } catch(_) {}
       try { renderWalletUI(); } catch(_) {}
+      try { updateSessionRail(); } catch(_) {}
     }
     _screenTimer = null;
   }, 40);
@@ -552,6 +553,13 @@ async function initWallet(acc, isNew = false) {
     const savedCheck = JSON.parse(localStorage.getItem('throw_active_bet') || 'null');
     if (!savedCheck || !savedCheck.active) {
       clearGlobalBet();
+    }
+  } catch(_) {}
+
+  // Restore Hold'em session so Back→Wallet never loses seats/stacks
+  try {
+    if (tryRestorePokerSession()) {
+      updateSessionRail();
     }
   } catch(_) {}
 
@@ -748,6 +756,10 @@ function subscribeDemoCredits(myAddr) {
       // Texas Hold'em invite — subscribe to table topic so poker_start reaches this phone
       if (data.event === 'poker_invite' && toMatch && data.roomCode) {
         acceptPokerInvite(data);
+      }
+      // Someone pointed THROW at our open Hold'em table — seat them
+      if (data.event === 'poker_join_request' && toMatch) {
+        handlePokerJoinRequest(data);
       }
       // Sponsor push via MQTT — update active sponsor for this session
       if (data.event === 'sponsor_push') {
@@ -2051,9 +2063,16 @@ function renderQR(addr) {
 let _throwInFlight = false;
 async function executeProximityThrow(target) {
   return withBusy('throw', async () => {
+  // Point at the Hold'em host (or just THROW with an open table nearby) → sit down
+  if (shouldJoinPokerInsteadOfThrow(target)) {
+    await joinNearbyPokerTable();
+    return;
+  }
   if (_throwInFlight) return;
   if (!target || !target.addr) {
-    showToast('Select a friend first');
+    showToast(state.nearbyPoker
+      ? 'Point at the Hold\'em phone — or tap THROW again to sit'
+      : 'Select a friend first');
     return;
   }
 
@@ -2112,6 +2131,8 @@ function openThrowScreen(preselect) {
   renderOrbSponsor();
   renderSponsorStrips();
   showScreen('throw');
+  // Look for an open Hold'em table — point + THROW sits you down
+  try { scanNearbyPokerTable(); } catch(_) {}
 }
 
 function renderThrowContacts(preselect) {
@@ -2202,6 +2223,13 @@ function setupThrowOrb() {
   orb.classList.remove('charging', 'fired');
 
   const startThrow = async () => {
+    // Open Hold'em nearby — THROW sits you without picking a contact
+    if (shouldJoinPokerInsteadOfThrow(state.throwTarget)) {
+      orb.classList.add('fired');
+      if (orbHint) orbHint.textContent = 'Joining…';
+      await joinNearbyPokerTable();
+      return;
+    }
     if (!state.throwTarget) {
       // Pulse the contacts strip to hint user to pick someone
       const strip = document.getElementById('throw-contacts-strip');
@@ -2210,7 +2238,9 @@ function setupThrowOrb() {
         void strip.offsetWidth;
         strip.style.animation = 'orbPulse 0.4s ease 2';
       }
-      showToast('👆 Pick a friend first');
+      showToast(state.nearbyPoker
+        ? '🃏 Tap THROW again to sit at Hold\'em — or pick a friend to send cash'
+        : '👆 Pick a friend first');
       return;
     }
 
@@ -2246,9 +2276,15 @@ function setupThrowOrb() {
   orb.ontouchend   = orb.onmouseup   = cancelThrow;
 
   // Tap-to-throw fallback — same flow, no gesture required
-  const tapBtn = document.getElementById('btn-tap-throw');
+    const tapBtn = document.getElementById('btn-tap-throw');
   if (tapBtn) {
     tapBtn.onclick = async () => {
+      if (shouldJoinPokerInsteadOfThrow(state.throwTarget)) {
+        orb.classList.add('fired');
+        if (orbHint) orbHint.textContent = 'Joining…';
+        await joinNearbyPokerTable();
+        return;
+      }
       if (!state.throwTarget) { showToast('\uD83D\uDC46 Pick a friend first'); return; }
       orb.classList.add('fired');
       if (orbHint) orbHint.textContent = 'Thrown! \u2713';
@@ -4788,17 +4824,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('bet-setup-back').onclick = () => showScreen('wallet');
   document.getElementById('btn-start-pot').onclick  = startPot;
 
-  // Poker wiring — always offer a clear escape to wallet
+  // Poker wiring — Back keeps the table alive; Leave ends it
   const pokerBack = document.getElementById('poker-setup-back');
-  if (pokerBack) pokerBack.onclick = () => {
-    try { leavePokerRoom(); } catch(_) {}
-    showScreen('wallet');
-  };
+  if (pokerBack) pokerBack.onclick = () => softExitPokerToWallet();
   const pokerTableBack = document.getElementById('poker-table-back');
-  if (pokerTableBack) pokerTableBack.onclick = () => {
+  if (pokerTableBack) pokerTableBack.onclick = () => softExitPokerToWallet();
+  const pokerLeaveSetup = document.getElementById('btn-poker-leave-setup');
+  if (pokerLeaveSetup) pokerLeaveSetup.onclick = () => {
     try { leavePokerRoom(); } catch(_) {}
     showScreen('wallet');
   };
+  const pokerLeaveTable = document.getElementById('btn-poker-leave-table');
+  if (pokerLeaveTable) pokerLeaveTable.onclick = () => {
+    try { leavePokerRoom(); } catch(_) {}
+    showScreen('wallet');
+  };
+  const resumePoker = document.getElementById('btn-resume-poker');
+  if (resumePoker) resumePoker.onclick = () => resumePokerSession();
+  const resumePot = document.getElementById('btn-resume-pot');
+  if (resumePot) resumePot.onclick = () => resumePotSession();
   const pokerStart = document.getElementById('btn-poker-start');
   if (pokerStart) pokerStart.onclick = () => {
     startPokerGame(state.poker?.seats || [], state.poker?.roomCode).catch(e => {
@@ -4844,19 +4888,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const potBack = document.getElementById('pot-back');
   if (potBack) potBack.onclick = () => {
-    // Soft leave — don't trap the host mid-demo
-    state.bet.active = false;
-    try { localStorage.removeItem('throw_active_bet'); } catch(_) {}
-    try { if (typeof leaveRoom === 'function') leaveRoom(); } catch(_) {}
+    // Soft leave — pot stays open; wallet shows Resume
+    try { persistActiveBet(); } catch(_) {}
     exitToWallet();
   };
 
   const playerBetBack = document.getElementById('player-bet-back');
   if (playerBetBack) playerBetBack.onclick = () => {
-    state.bet.active = false;
-    state.bet.joined = false;
-    state.bet.joinedEscrow = null;
-    try { clearPendingBetButton(); } catch(_) {}
+    // Soft leave — stay in the bet until settled or you leave intentionally
+    try { persistActiveBet(); } catch(_) {}
     exitToWallet();
   };
 
@@ -5611,6 +5651,9 @@ async function openPokerSetup() {
   renderPokerSetup();
   enterRoom(roomCode, {}).catch(() => {});
   _subscribePokerTopic(roomCode);
+  // Broadcast open lobby — nearby phones point THROW at this host to sit
+  try { publishHostPokerBeacon(); } catch(_) {}
+  try { persistPokerSession(); } catch(_) {}
   // Warm TTS voices (Chrome loads them async)
   try { window.speechSynthesis && window.speechSynthesis.getVoices(); } catch(_) {}
 
@@ -5735,6 +5778,8 @@ function renderPokerSetup() {
   });
 
   if (startBtn) startBtn.disabled = p.seats.length < 2;
+  if (p.isHost) { try { publishHostPokerBeacon(); } catch(_) {} }
+  try { persistPokerSession(); } catch(_) {}
 }
 
 function _assignPokerBlindIndexes(seatCount) {
@@ -5940,6 +5985,9 @@ async function startPokerGame(seats, roomCode) {
   if (cSetup) _pokerTableCenter = !!cSetup.checked;
 
   if (startBtn) startBtn.textContent = 'Deal — start the hand';
+  // Lobby closed — no more THROW-to-join once cards are out
+  try { clearGlobalPokerTable(); } catch(_) {}
+  try { persistPokerSession(); } catch(_) {}
   showScreen('poker-table');
   applyPokerTableMode();
   announcePokerStart(seats, p.sbIdx, p.bbIdx, sbAmt, bbAmt, { speak: true });
@@ -6531,6 +6579,7 @@ function _handlePokerMessage(data, opts) {
 }
 
 function leavePokerRoom() {
+  try { clearGlobalPokerTable(); } catch(_) {}
   try { _pokerMqttClient?.end(true); } catch(_) {}
   _pokerMqttClient = null;
   state.poker = null;
@@ -6540,4 +6589,353 @@ function leavePokerRoom() {
     state.bet.active = false;
     try { localStorage.removeItem('throw_active_bet'); } catch(_) {}
   }
+  try { localStorage.removeItem('throw_poker_session'); } catch(_) {}
+  try { updateSessionRail(); } catch(_) {}
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THROW-TO-JOIN HOLD'EM + SESSION PERSISTENCE
+   Point at the host phone / open table and THROW to sit. Back never
+   destroys seats, stacks, or an open pot — only Leave does.
+   ═════════════════════════════════════════════════════════════════════ */
+
+function softExitPokerToWallet() {
+  try { persistPokerSession(); } catch(_) {}
+  showScreen('wallet');
+  try { updateSessionRail(); } catch(_) {}
+  showToast("Table still running — tap Hold'em to return");
+}
+
+function publishHostPokerBeacon() {
+  const p = state.poker;
+  if (!p || !p.isHost) return;
+  // Only advertise while seating — not mid-hand
+  if (p.street && p.street !== 'waiting' && p.street !== 'preflop' && currentScreen === 'poker-table') {
+    // If already dealt (street progressing), keep beacon clear
+  }
+  // Host seats on poker-setup (street may already be 'preflop'); only advertise in lobby
+  const open = currentScreen === 'poker-setup' || p.street === 'waiting' || !p.street;
+  if (!open) {
+    try { clearGlobalPokerTable(); } catch(_) {}
+    return;
+  }
+  const hostAddr = state.account?.address;
+  if (!hostAddr || !p.roomCode) return;
+  const seatsOpen = Math.max(0, POKER_MAX_SEATS - (p.seats?.length || 0));
+  if (seatsOpen <= 0) {
+    try { clearGlobalPokerTable(); } catch(_) {}
+    return;
+  }
+  publishGlobalPokerTable({
+    hostAddr,
+    hostName: getHandle() || hostAddr.slice(0, 6),
+    roomCode: p.roomCode,
+    escrowAddr: p.escrowAddr || state.bet?.escrowAddr || null,
+    blinds: { sb: POKER_SB, bb: POKER_BB },
+    seatsOpen,
+    demo: !!DEMO_MODE,
+  });
+}
+
+function scanNearbyPokerTable() {
+  // Don't scan if we're hosting or already seated
+  if (state.poker?.roomCode) return;
+  scanForPokerTables((table) => {
+    if (!table || !table.roomCode) {
+      state.nearbyPoker = null;
+      return;
+    }
+    // Ignore our own beacon
+    const me = (state.account?.address || '').toLowerCase();
+    if (table.hostAddr && table.hostAddr.toLowerCase() === me) {
+      state.nearbyPoker = null;
+      return;
+    }
+    state.nearbyPoker = table;
+    try {
+      const hint = document.getElementById('throw-orb-hint');
+      const sub = document.getElementById('throw-orb-sub');
+      const tap = document.getElementById('btn-tap-throw');
+      const host = table.hostName || 'Hold\'em';
+      if (hint) hint.textContent = 'THROW to sit at ' + host;
+      if (sub) sub.textContent = 'Point at the host phone — or tap THROW to join';
+      if (tap) {
+        tap.classList.remove('hidden');
+        tap.textContent = 'TAP TO SIT';
+      }
+    } catch(_) {}
+    showToast('🃏 Hold\'em open nearby — THROW to sit');
+  }, 4500);
+}
+
+function shouldJoinPokerInsteadOfThrow(target) {
+  const table = state.nearbyPoker;
+  if (!table || !table.roomCode || !table.hostAddr) return false;
+  if (state.poker?.roomCode) return false;
+  // Aimed at the host contact, or no cash target (generic THROW-to-sit)
+  if (!target || !target.addr) return true;
+  return target.addr.toLowerCase() === String(table.hostAddr).toLowerCase();
+}
+
+async function joinNearbyPokerTable() {
+  return withBusy('poker-join', async () => {
+    const table = state.nearbyPoker;
+    if (!table || !table.hostAddr || !table.roomCode) {
+      showToast('No open Hold\'em table nearby');
+      return;
+    }
+    if (state.poker?.roomCode === table.roomCode) {
+      showScreen(state.poker.street && state.poker.street !== 'waiting' ? 'poker-table' : 'poker-setup');
+      return;
+    }
+    const myAddr = state.account?.address;
+    if (!myAddr) { showError('Wallet not ready'); return; }
+    const myName = getHandle() || myAddr.slice(0, 6);
+
+    showTxFlash('🃏', '$1/$2', 'Joining Hold\'em…');
+    const payload = JSON.stringify({
+      event: 'poker_join_request',
+      to: table.hostAddr,
+      from: myAddr,
+      fromName: myName,
+      roomCode: table.roomCode,
+      demo: !!DEMO_MODE,
+      ts: Date.now(),
+    });
+    try {
+      const topic = 'throw5/wallet/' + table.hostAddr.toLowerCase() + '/credit';
+      const clientId = 'poker_join_' + Math.random().toString(36).slice(2, 8);
+      const c = mqtt.connect(MQTT_BROKER, { clientId, clean: true, connectTimeout: 6000, reconnectPeriod: 0 });
+      await new Promise((resolve) => {
+        let done = false;
+        const finish = () => { if (done) return; done = true; try { c.end(true); } catch(_) {} resolve(); };
+        c.on('connect', () => {
+          c.publish(topic, payload, { qos: 1 }, finish);
+        });
+        c.on('error', finish);
+        setTimeout(finish, 5000);
+      });
+    } catch (e) {
+      hideTxFlash();
+      showError('Could not reach table: ' + (e.message || e));
+      return;
+    }
+
+    // Optimistic local seat — host will confirm with poker_invite
+    state.poker = {
+      seats: [{ addr: myAddr, name: myName, role: 'player', stack: POKER_STARTING_STACK, bet: 0, folded: false, acted: false }],
+      pot: 0,
+      street: 'waiting',
+      currentSeat: 0,
+      dealerIdx: 0,
+      sbIdx: 1,
+      bbIdx: 2,
+      roomCode: table.roomCode,
+      escrowAddr: table.escrowAddr || null,
+      isHost: false,
+      myAddr,
+      structure: 'texas-holdem',
+      demo: !!DEMO_MODE,
+      currentBet: POKER_BB,
+      lastRaiser: null,
+      joining: true,
+    };
+    Object.assign(state.bet, {
+      active: true,
+      isHost: false,
+      structure: 'texas-holdem',
+      description: "Texas Hold'em",
+      escrowAddr: table.escrowAddr || null,
+      hostAddr: table.hostAddr,
+      roomCode: table.roomCode,
+    });
+    _subscribePokerTopic(table.roomCode);
+    enterRoom(table.roomCode, {}).catch(() => {});
+    try { persistPokerSession(); } catch(_) {}
+    setTimeout(() => hideTxFlash(), 1800);
+    showToast('Asked to sit — waiting for host');
+    showScreen('poker-setup');
+    const codeEl = document.getElementById('poker-setup-code');
+    if (codeEl) codeEl.textContent = 'Joining ' + table.roomCode + '…';
+  });
+}
+
+function handlePokerJoinRequest(data) {
+  const p = state.poker;
+  if (!p || !p.isHost) return;
+  if (!data?.from) return;
+  // Only accept joins while seating
+  if (p.street && p.street !== 'waiting' && currentScreen === 'poker-table') {
+    showToast('Hand already started — can\'t seat mid-deal');
+    return;
+  }
+  const addr = data.from;
+  const name = (data.fromName || addr.slice(0, 6)).toString();
+  if (p.seats.some(s => s.addr.toLowerCase() === addr.toLowerCase())) {
+    // Already seated — re-send invite so their phone syncs
+    _invitePokerPlayers([{ addr, name }], p.roomCode);
+    return;
+  }
+  if (p.seats.length >= POKER_MAX_SEATS) {
+    showToast('Table full');
+    return;
+  }
+  p.seats.push({
+    addr,
+    name,
+    role: 'player',
+    stack: POKER_STARTING_STACK,
+    bet: 0,
+    folded: false,
+    acted: false,
+  });
+  // Also add as contact so THROW targeting works later
+  try { upsertContact(name, addr); } catch(_) {}
+  renderPokerSetup();
+  _invitePokerPlayers(p.seats, p.roomCode);
+  try { publishHostPokerBeacon(); } catch(_) {}
+  try { persistPokerSession(); } catch(_) {}
+  showToast(name + ' sat down via THROW');
+  pokerHaptic && pokerHaptic();
+}
+
+function persistPokerSession() {
+  const p = state.poker;
+  if (!p || !p.roomCode) {
+    try { localStorage.removeItem('throw_poker_session'); } catch(_) {}
+    return;
+  }
+  try {
+    localStorage.setItem('throw_poker_session', JSON.stringify({
+      seats: p.seats,
+      pot: p.pot,
+      street: p.street,
+      currentSeat: p.currentSeat,
+      dealerIdx: p.dealerIdx,
+      sbIdx: p.sbIdx,
+      bbIdx: p.bbIdx,
+      roomCode: p.roomCode,
+      escrowAddr: p.escrowAddr || null,
+      isHost: !!p.isHost,
+      myAddr: p.myAddr,
+      structure: p.structure || 'texas-holdem',
+      demo: !!p.demo,
+      currentBet: p.currentBet,
+      lastRaiser: p.lastRaiser,
+      joining: !!p.joining,
+      ts: Date.now(),
+    }));
+  } catch(_) {}
+}
+
+function persistActiveBet() {
+  if (!state.bet?.active) return;
+  try {
+    localStorage.setItem('throw_active_bet', JSON.stringify({
+      ...state.bet,
+      ts: Date.now(),
+    }));
+  } catch(_) {}
+}
+
+function updateSessionRail() {
+  const rail = document.getElementById('session-rail');
+  const pokerBtn = document.getElementById('btn-resume-poker');
+  const potBtn = document.getElementById('btn-resume-pot');
+  if (!rail) return;
+
+  const pokerLive = !!(state.poker && state.poker.roomCode && state.poker.street !== 'settled');
+  const potLive = !!(state.bet?.active && state.bet.structure !== 'texas-holdem');
+
+  if (pokerBtn) {
+    pokerBtn.classList.toggle('hidden', !pokerLive);
+    const sub = document.getElementById('resume-poker-sub');
+    if (sub && pokerLive) {
+      const n = state.poker.seats?.length || 0;
+      const street = (state.poker.street || 'lobby').toUpperCase();
+      sub.textContent = n + ' seated · ' + street + ' · tap to return';
+    }
+  }
+  if (potBtn) {
+    potBtn.classList.toggle('hidden', !potLive);
+    const sub = document.getElementById('resume-pot-sub');
+    if (sub && potLive) {
+      sub.textContent = (state.bet.description || 'Pot') + ' · tap to return';
+    }
+  }
+  rail.classList.toggle('hidden', !(pokerLive || potLive));
+}
+
+function resumePokerSession() {
+  const p = state.poker;
+  if (!p) {
+    tryRestorePokerSession();
+  }
+  if (!state.poker) { showToast('No table in progress'); return; }
+  const street = state.poker.street;
+  if (!street || street === 'waiting') showScreen('poker-setup');
+  else showScreen('poker-table');
+  try { renderPokerSetup(); } catch(_) {}
+  try { renderPokerTable(); } catch(_) {}
+}
+
+function resumePotSession() {
+  if (!state.bet?.active) { showToast('No open pot'); return; }
+  if (state.bet.isHost) {
+    showScreen('pot');
+    try { renderPotScreen(); } catch(_) {}
+  } else {
+    showScreen('player-bet');
+    try { if (typeof renderPlayerBetScreen === 'function') renderPlayerBetScreen(); } catch(_) {}
+  }
+}
+
+function tryRestorePokerSession() {
+  try {
+    const raw = localStorage.getItem('throw_poker_session');
+    if (!raw) return false;
+    const saved = JSON.parse(raw);
+    if (!saved?.roomCode || !saved.ts) return false;
+    // Drop stale sessions (>6h)
+    if (Date.now() - saved.ts > 6 * 3600 * 1000) {
+      localStorage.removeItem('throw_poker_session');
+      return false;
+    }
+    if (state.poker?.roomCode) return true;
+    state.poker = {
+      seats: saved.seats || [],
+      pot: saved.pot || 0,
+      street: saved.street || 'waiting',
+      currentSeat: saved.currentSeat || 0,
+      dealerIdx: saved.dealerIdx || 0,
+      sbIdx: saved.sbIdx || 1,
+      bbIdx: saved.bbIdx || 2,
+      roomCode: saved.roomCode,
+      escrowAddr: saved.escrowAddr || null,
+      isHost: !!saved.isHost,
+      myAddr: saved.myAddr || state.account?.address,
+      structure: saved.structure || 'texas-holdem',
+      demo: !!saved.demo,
+      currentBet: saved.currentBet || POKER_BB,
+      lastRaiser: saved.lastRaiser || null,
+      joining: !!saved.joining,
+    };
+    Object.assign(state.bet, {
+      active: true,
+      isHost: !!saved.isHost,
+      structure: 'texas-holdem',
+      description: "Texas Hold'em",
+      escrowAddr: saved.escrowAddr || null,
+      roomCode: saved.roomCode,
+    });
+    _subscribePokerTopic(saved.roomCode);
+    enterRoom(saved.roomCode, {}).catch(() => {});
+    if (saved.isHost && (!saved.street || saved.street === 'waiting')) {
+      try { publishHostPokerBeacon(); } catch(_) {}
+    }
+    return true;
+  } catch(_) {
+    return false;
+  }
+}
+
