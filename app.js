@@ -305,7 +305,7 @@ const state = {
     isHost:     false,
     description: '',
     amountPer:  5,
-    structure:  'winner-all',
+    structure:  'iou',
     escrowKey:  null,
     escrowAddr: null,
     hostAddr:   null,
@@ -796,10 +796,79 @@ const HOUSE_BRANDS = [
   { name: '$$$',   text: '\u{1F911}' },
 ];
 
+
+/* ── LOCAL BUSINESS DEAL PUSH (in-store QR) ─────────────────────────── */
+function buildDealRedeemPayload(deal) {
+  const code = deal.dealCode || deal.code || '';
+  const name = deal.name || 'Local deal';
+  const offer = deal.dealText || deal.tagline || '';
+  // Prefer explicit redeem URL; else encode a THROW deal claim the cashier can scan
+  if (deal.dealUrl || deal.url) {
+    const u = String(deal.dealUrl || deal.url);
+    if (code && u.indexOf('code=') < 0) {
+      return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'code=' + encodeURIComponent(code);
+    }
+    return u;
+  }
+  return 'throw://deal?biz=' + encodeURIComponent(name) +
+    '&offer=' + encodeURIComponent(offer) +
+    '&code=' + encodeURIComponent(code);
+}
+
+function isDealAd(item) {
+  if (!item) return false;
+  if (item.kind === 'deal' || item.type === 'deal' || item.isDeal) return true;
+  if (item.dealText || item.dealCode) return true;
+  return false;
+}
+
+function hideDealPush() {
+  document.getElementById('deal-push')?.classList.add('hidden');
+}
+
+function showDealPush(deal) {
+  if (!deal || !isDealAd(deal)) { hideDealPush(); return; }
+  let el = document.getElementById('deal-push');
+  if (!el) return;
+  const nameEl = document.getElementById('deal-push-name');
+  const offerEl = document.getElementById('deal-push-offer');
+  const codeEl = document.getElementById('deal-push-code');
+  const canvas = document.getElementById('deal-push-qr');
+  if (nameEl) nameEl.textContent = deal.name || 'Nearby deal';
+  if (offerEl) offerEl.textContent = deal.dealText || deal.tagline || 'Show this QR in store';
+  if (codeEl) {
+    const code = deal.dealCode || deal.code || '';
+    codeEl.textContent = code ? ('Code · ' + code) : 'Scan in store to unlock';
+    codeEl.style.display = '';
+  }
+  const payload = buildDealRedeemPayload(deal);
+  if (canvas && typeof QRCode !== 'undefined') {
+    try {
+      QRCode.toCanvas(canvas, payload, {
+        width: 160, margin: 1,
+        color: { dark: '#000000', light: '#ffffff' },
+      }, () => {});
+    } catch(_) {}
+  }
+  el.dataset.dealId = deal.id || deal.name || '';
+  el.classList.remove('hidden');
+  logSponsorEvent('deal_push', deal);
+}
+
+function maybePushDealFromSponsor(sponsor) {
+  if (!sponsor) { hideDealPush(); return; }
+  // Prefer an explicit deal in the strip rotation
+  const deals = (_allSponsors || []).filter(isDealAd);
+  const pick = isDealAd(sponsor) ? sponsor : (deals[0] || null);
+  if (pick) showDealPush(pick);
+  else hideDealPush();
+}
+
 function setSponsor(sponsor) {
   _activeSponsor = sponsor;
   renderOrbSponsor();
   renderSponsorStrips();
+  try { maybePushDealFromSponsor(sponsor); } catch(_) {}
   // If sponsor splash is currently visible, update its logo live
   const splashScreen = document.getElementById('screen-sponsor-splash');
   const logoEl = document.getElementById('spsplash-logo');
@@ -935,6 +1004,10 @@ function openSponsorClick(item, src) {
   if (!item || item.text) return;
   item._clickSrc = src || 'strip';
   logSponsorEvent('click', item);
+  if (isDealAd(item)) {
+    showDealPush(item);
+    return;
+  }
   const dest = item.url || item.clickUrl;
   if (!dest) return;
   const tracked = '/api/ads/click?id=' + encodeURIComponent(item.id || item.name || 'ad')
@@ -1199,6 +1272,138 @@ function saveSelfProfile(data) {
   try { localStorage.setItem('throw_my_profile', JSON.stringify(data)); } catch(_) {}
 }
 
+
+/* ── WALLET THEME FROM COLLEGE / TEAM PHOTO ─────────────────────────── */
+const DEFAULT_THEME = {
+  accent: '#00e5a0',
+  accent2: '#00b880',
+  glow: 'rgba(0,229,160,0.25)',
+  rgb: '0,229,160',
+};
+
+function _rgbToHex(r, g, b) {
+  return '#' + [r, g, b].map(v => Math.max(0, Math.min(255, v|0)).toString(16).padStart(2, '0')).join('');
+}
+
+function _relLuma(r, g, b) {
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+function _saturateBoost(r, g, b) {
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  if (max === min) return [r, g, b];
+  const avg = (max + min) / 2;
+  return [
+    Math.round(Math.min(255, avg + (r - avg) * 1.35)),
+    Math.round(Math.min(255, avg + (g - avg) * 1.35)),
+    Math.round(Math.min(255, avg + (b - avg) * 1.35)),
+  ];
+}
+
+/** Sample a photo and pick a vivid accent + darker companion for the wallet chrome. */
+function extractThemeFromImage(img) {
+  const size = 48;
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, size, size);
+  const data = ctx.getImageData(0, 0, size, size).data;
+  const buckets = new Map();
+  for (let i = 0; i < data.length; i += 4) {
+    const a = data[i + 3];
+    if (a < 200) continue;
+    let r = data[i], g = data[i + 1], b = data[i + 2];
+    const luma = _relLuma(r, g, b);
+    if (luma < 0.12 || luma > 0.92) continue; // skip near-black / near-white
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const sat = max === 0 ? 0 : (max - min) / max;
+    if (sat < 0.12) continue; // skip gray
+    // quantize
+    r = (r >> 4) << 4; g = (g >> 4) << 4; b = (b >> 4) << 4;
+    const key = r + ',' + g + ',' + b;
+    const prev = buckets.get(key) || { r, g, b, n: 0, satSum: 0 };
+    prev.n += 1;
+    prev.satSum += sat;
+    buckets.set(key, prev);
+  }
+  let best = null;
+  for (const v of buckets.values()) {
+    const score = v.n * (0.35 + v.satSum / v.n);
+    if (!best || score > best.score) best = { ...v, score };
+  }
+  if (!best) return { ...DEFAULT_THEME };
+  let [r, g, b] = _saturateBoost(best.r, best.g, best.b);
+  // Ensure it's bright enough to read on black
+  if (_relLuma(r, g, b) < 0.35) {
+    const lift = 0.35 / Math.max(0.01, _relLuma(r, g, b));
+    r = Math.min(255, Math.round(r * lift));
+    g = Math.min(255, Math.round(g * lift));
+    b = Math.min(255, Math.round(b * lift));
+  }
+  const accent = _rgbToHex(r, g, b);
+  const accent2 = _rgbToHex(Math.round(r * 0.72), Math.round(g * 0.72), Math.round(b * 0.72));
+  const glow = 'rgba(' + r + ',' + g + ',' + b + ',0.28)';
+  return { accent, accent2, glow, rgb: r + ',' + g + ',' + b, swatches: [accent, accent2, _rgbToHex(Math.min(255, r + 40), Math.min(255, g + 20), b)] };
+}
+
+function applyWalletTheme(theme) {
+  const t = theme || DEFAULT_THEME;
+  const root = document.documentElement;
+  root.style.setProperty('--accent', t.accent);
+  root.style.setProperty('--accent-2', t.accent2 || t.accent);
+  root.style.setProperty('--accent-glow', t.glow || DEFAULT_THEME.glow);
+  root.style.setProperty('--accent-rgb', t.rgb || DEFAULT_THEME.rgb);
+  root.style.setProperty('--win', t.accent);
+  const row = document.getElementById('theme-swatch-row');
+  if (row) {
+    const sw = t.swatches || [t.accent, t.accent2, t.accent];
+    row.innerHTML = sw.map(c => '<span class="theme-swatch" style="background:' + c + '"></span>').join('');
+    row.setAttribute('aria-hidden', 'false');
+  }
+  const resetBtn = document.getElementById('theme-reset-btn');
+  if (resetBtn) resetBtn.style.display = (t.accent === DEFAULT_THEME.accent) ? 'none' : '';
+}
+
+function loadStoredWalletTheme() {
+  try {
+    const t = JSON.parse(localStorage.getItem('throw_wallet_theme') || 'null');
+    if (t && t.accent) { applyWalletTheme(t); return t; }
+  } catch(_) {}
+  applyWalletTheme(DEFAULT_THEME);
+  return null;
+}
+
+function saveWalletTheme(theme) {
+  try { localStorage.setItem('throw_wallet_theme', JSON.stringify(theme)); } catch(_) {}
+  applyWalletTheme(theme);
+}
+
+function resetWalletTheme() {
+  try { localStorage.removeItem('throw_wallet_theme'); } catch(_) {}
+  applyWalletTheme(DEFAULT_THEME);
+  const row = document.getElementById('theme-swatch-row');
+  if (row) { row.innerHTML = ''; row.setAttribute('aria-hidden', 'true'); }
+  showToast('Theme reset to mint');
+}
+
+function themeFromPhotoFile(file) {
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    try {
+      const theme = extractThemeFromImage(img);
+      saveWalletTheme(theme);
+      showToast('Wallet painted from your photo');
+    } catch (e) {
+      showToast('Could not read colors — try another photo');
+    }
+    URL.revokeObjectURL(url);
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); showToast('Could not load photo'); };
+  img.src = url;
+}
+
 function initMyProfile() {
   const modal    = document.getElementById('my-profile-modal');
   const closeBtn = document.getElementById('my-profile-close');
@@ -1281,7 +1486,27 @@ function initMyProfile() {
       _doShareCard(params, shareStatus);
     }
   };
+
+  // College / team theme from photo
+  const themeIn = document.getElementById('theme-photo-input');
+  if (themeIn) themeIn.onchange = () => {
+    const file = themeIn.files && themeIn.files[0];
+    if (file) themeFromPhotoFile(file);
+    themeIn.value = '';
+  };
+  const themeReset = document.getElementById('theme-reset-btn');
+  if (themeReset) themeReset.onclick = () => resetWalletTheme();
+  // Show current swatches when opening
+  const selfBtn2 = document.getElementById('self-avatar-btn');
+  if (selfBtn2) {
+    const prev = selfBtn2.onclick;
+    selfBtn2.onclick = (e) => {
+      if (typeof prev === 'function') prev(e);
+      loadStoredWalletTheme();
+    };
+  }
 }
+
 
 function dataURLtoFile(dataUrl, filename) {
   const arr  = dataUrl.split(',');
@@ -2641,7 +2866,7 @@ document.addEventListener('visibilitychange', () => {
 function openBetSetup() {
   showScreen('bet-setup');
   state.bet.amountPer = 5;
-  state.bet.structure = 'winner-all';
+  state.bet.structure = 'iou';
 
   // Amount buttons
   document.querySelectorAll('[data-betamt]').forEach(b => {
@@ -2777,12 +3002,23 @@ function renderPotScreen() {
   if (betText) betText.textContent = state.bet.description;
   const badge = document.getElementById('pot-struct-badge');
   if (badge) badge.textContent = {
+    'iou':         'IOU / TAB',
     'winner-all':  'WINNER TAKES ALL',
     'flip':        'THE FLIP',
     'round-robin': 'ROUND ROBIN',
   }[state.bet.structure] || '';
   const totalEl = document.getElementById('pot-total');
   if (totalEl) totalEl.textContent = '$' + (state.bet.total || 0).toFixed(2);
+  const winBtn = document.getElementById('btn-win');
+  const loseBtn = document.getElementById('btn-lose');
+  if (state.bet.structure === 'iou') {
+    if (winBtn) winBtn.textContent = '✓ THEY PAID';
+    if (loseBtn) loseBtn.textContent = '✗ FORGIVE / SEND BACK';
+  } else {
+    if (winBtn) winBtn.textContent = '✓ I WAS RIGHT';
+    if (loseBtn) loseBtn.textContent = '✗ I WAS WRONG';
+  }
+
 
   // Orb starts inert — goes .live when first player joins
   const orb = document.getElementById('pot-orb');
@@ -2922,7 +3158,7 @@ async function settleBet(hostWon) {
       const nonHostPlayers = players.filter(p => p.addr.toLowerCase() !== hostAddr.toLowerCase());
       const payoutPlayers  = nonHostPlayers.length > 0 ? nonHostPlayers : players;
 
-      if (state.bet.structure === 'winner-all') {
+      if ((state.bet.structure === 'winner-all' || state.bet.structure === 'iou')) {
         if (hostWon) {
           await payTo(hostAddr, pot);
           results = [{ addr: hostAddr, amount: pot, type: 'win' }];
@@ -2980,7 +3216,7 @@ async function settleBet(hostWon) {
       // Refill EXECUTOR with 2% of the bet fee so it stays funded from live volume.
       try { await _refillExecutor(state.bet.escrowKey, potFee); } catch(_) {}
 
-      if (state.bet.structure === 'winner-all') {
+      if ((state.bet.structure === 'winner-all' || state.bet.structure === 'iou')) {
         if (hostWon) {
           await _escrowSend(wc, pc, hostAddr, potNet);
           results = [{ addr: hostAddr, amount: potNet, type: 'win' }];
@@ -3466,7 +3702,7 @@ bc.onmessage = (evt) => {
         const playerCount = payload.playerCount || 1;
         const amountPer   = payload.amountPer   || 0;
         let payout = 0;
-        if (payload.structure === 'winner-all') {
+        if ((payload.structure === 'winner-all' || payload.structure === 'iou')) {
           payout = pot / playerCount;
         } else if (payload.structure === 'flip') {
           payout = Math.min(amountPer * 2, pot / playerCount);
@@ -4437,6 +4673,7 @@ function openAddCashScreen() {
   const pkEl = document.getElementById('backup-key-display');
   if (pkEl) pkEl.textContent = pk;
   updateFundBalanceChip();
+  try { updateSmsFriendLink(); } catch(_) {}
   // Poll while funding so Tempo → THROW deposits show up without manual refresh
   stopFundBalancePoll();
   _fundPollTimer = setInterval(async () => {
@@ -4455,22 +4692,49 @@ function openAddCashScreen() {
   }, 4000);
 }
 
+function buildAskFriendLoadText(name, url) {
+  return 'Hey — can you load me on THROW? Cap is $50 for tonight. I\'m ' + (name || 'here') + '. ' + url;
+}
+
+function updateSmsFriendLink() {
+  const a = document.getElementById('btn-sms-friend');
+  if (!a) return;
+  const addr = state.account?.address || '';
+  const name = getHandle() || (addr ? addr.slice(0, 6) : '');
+  const url = buildReceiveShareUrl(location.origin, name, addr);
+  const body = buildAskFriendLoadText(name, url);
+  a.href = 'sms:?&body=' + encodeURIComponent(body);
+}
+
 async function shareReceiveLink() {
   const addr = state.account?.address;
   if (!addr) return;
   const name = getHandle() || addr.slice(0, 6);
   const url = buildReceiveShareUrl(location.origin, name, addr);
-  const text = 'Throw me cash on THROW — I\'m ' + name + '. ' + url;
+  const text = buildAskFriendLoadText(name, url);
   if (navigator.share) {
-    try { await navigator.share({ title: 'Throw me cash', text, url }); return; } catch(e) {
-      if (e && e.name === 'AbortError') return;
+    try { await navigator.share({ title: 'Ask a friend to load you', text, url }); return 'shared'; } catch(e) {
+      if (e && e.name === 'AbortError') return 'abort';
     }
   }
   try {
     await navigator.clipboard.writeText(url);
-    showToast('Receive link copied');
+    showToast('Ask-a-friend link copied');
+    return 'copied';
   } catch(_) {
     showToast(addr);
+    return 'shown';
+  }
+}
+
+async function askFriendToLoadYou() {
+  const result = await shareReceiveLink();
+  if (result === 'shared' || result === 'copied') return;
+  // Fallback: open SMS compose with the ask copy
+  updateSmsFriendLink();
+  const sms = document.getElementById('btn-sms-friend');
+  if (sms && sms.href && sms.href.indexOf('sms:') === 0) {
+    try { window.location.href = sms.href; } catch(_) {}
   }
 }
 
@@ -4950,6 +5214,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // My Profile modal — full wiring
   initMyProfile();
+  try { loadStoredWalletTheme(); } catch(_) {}
+  document.getElementById('deal-push-close')?.addEventListener('click', hideDealPush);
+  document.getElementById('deal-push')?.addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'deal-push') hideDealPush();
+  });
   updateSelfAvatar();
 
   // Handle ?addName=&addAddr= contact share links
@@ -4970,7 +5239,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('btn-new-bet').onclick = () => {
     state.bet = { active: false, isHost: false, description: '', amountPer: 5, yesPot: 0, noPot: 0, side: null, hostAddr: null, roomCode: null,
-      structure: 'winner-all', escrowKey: null, escrowAddr: null, players: [], total: 0 };
+      structure: 'iou', escrowKey: null, escrowAddr: null, players: [], total: 0 };
     openBetSetup();
   };
   document.getElementById('btn-settled-home').onclick = () => {
@@ -5003,6 +5272,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const shareRecv = document.getElementById('btn-share-receive');
   if (shareRecv) shareRecv.onclick = () => shareReceiveLink();
+
+  const askFriendBtn = document.getElementById('btn-ask-friend-load');
+  if (askFriendBtn) askFriendBtn.onclick = () => askFriendToLoadYou();
+  try { updateSmsFriendLink(); } catch(_) {}
+  const smsFriend = document.getElementById('btn-sms-friend');
+  if (smsFriend) smsFriend.addEventListener('click', () => { try { updateSmsFriendLink(); } catch(_) {} });
 
   const fundDemo = document.getElementById('btn-fund-demo');
   if (fundDemo) fundDemo.onclick = () => {
