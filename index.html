@@ -860,21 +860,24 @@
       <div class="fund-card-kicker">Real dollars · Tempo chain</div>
       <div class="fund-card-title">Fund via Tempo Wallet</div>
       <div class="fund-card-body">
-        Buy or bridge stablecoins on Tempo, then send them to your THROW address (hot wallet on Tempo).
+        Anyone can send dollars your way — USD onramp, USDC, USDT from other chains — then it lands on Tempo as spendable stablecoin in this wallet.
         <ol class="fund-olist">
-          <li>Copy your THROW address above</li>
-          <li>Open Tempo Wallet → Add funds (card / bridge)</li>
-          <li>Send <strong>USDC.e</strong> or <strong>pathUSD</strong> here</li>
-          <li>Come back — this screen polls and updates</li>
+          <li>Copy your THROW address (or tap a bridge below — address is prefilled)</li>
+          <li><strong>Relay</strong>: send USDC/USDT from Ethereum, Base, Solana, etc. → Tempo</li>
+          <li>Or open Tempo Wallet → card / bank → send <strong>USDC.e</strong> or <strong>pathUSD</strong> here</li>
+          <li>Come back — this screen polls until funds show</li>
         </ol>
       </div>
       <button class="tempo-wallet-btn" id="btn-open-tempo">
         Open Tempo Wallet
-        <span class="tempo-wallet-sub">Buy or bridge → send to THROW → done</span>
+        <span class="tempo-wallet-sub">Card / bank → send to THROW → done</span>
       </button>
       <div class="fund-bridge-row">
+        <a class="fund-bridge-link" id="btn-bridge-relay" href="https://relay.link/bridge/tempo" target="_blank" rel="noopener">Relay · any chain → Tempo</a>
         <a class="fund-bridge-link" id="btn-bridge-across" href="https://app.across.to/tempo" target="_blank" rel="noopener">Across bridge</a>
-        <a class="fund-bridge-link" id="btn-bridge-relay" href="https://relay.link/bridge/tempo" target="_blank" rel="noopener">Relay bridge</a>
+      </div>
+      <div class="fund-card-body" style="margin-top:8px;opacity:0.75;font-size:12px">
+        THROW spends <strong>USDC.e</strong> + <strong>pathUSD</strong> on Tempo. Bridged USDT/USDC is routed into those — you don't need a custom router contract.
       </div>
     </div>
 
@@ -906,12 +909,13 @@
     <div class="points-stat" id="points-stat-throws">0 throws</div>
     <div class="points-stat-label">this session</div>
     <div class="points-explainer">
-      Every throw you make is recorded on Tempo's blockchain — backed by Stripe &amp; Paradigm.
-      Tempo has not yet issued a token. Early on-chain activity is typically rewarded in ecosystem airdrops.
-      <strong>Your wallet is building history right now.</strong>
+      Live throws settle on <strong>Tempo</strong> — a payments chain incubated by Stripe &amp; Paradigm.
+      There is <strong>no Tempo token</strong> and no official points or airdrop program.
+      This counter is THROW's local tally of your throws this session (demo throws stay off-chain).
+      <strong>On-chain history still builds when you throw for real.</strong>
     </div>
     <div class="points-disclaimer">
-      THROW makes no guarantee of any airdrop or token reward. Informational only.
+      Not affiliated with a Tempo rewards program. No airdrop is promised or expected.
     </div>
   </div>
 </div>
