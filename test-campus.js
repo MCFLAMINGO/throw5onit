@@ -97,5 +97,13 @@ console.log('5) Pure helpers');
   assert(offline.startsWith('throw://deal') && offline.includes('WINGS'), 'offline deal QR payload');
 }
 
+
+console.log('6) Ad admin reachable from profile');
+{
+  assert(html.includes('id="my-profile-ads-admin"'), 'profile → ads admin link');
+  assert(html.includes('href="/ads"'), 'href /ads');
+  assert(fs.existsSync(path.join(__dirname, 'ads.html')), 'ads.html present');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
