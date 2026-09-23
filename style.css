@@ -5004,3 +5004,106 @@ button:disabled,
   color: var(--text-3);
   line-height: 1.4;
 }
+
+/* ── PHONE SHELL (desktop / wide viewports) ─────────────────────────────
+   THROW is a phone PWA. On large screens, pin the UI to a device-sized
+   frame centered on a dark desk — never stretch wallet chrome full-bleed. */
+@media (min-width: 520px) {
+  :root {
+    --phone-w: 390px;
+    --phone-h: min(844px, calc(100dvh - 40px));
+  }
+
+  html,
+  body {
+    background: #050505;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse 55% 40% at 50% 12%, rgba(0, 229, 160, 0.07), transparent 70%),
+      #050505;
+  }
+
+  body::after {
+    content: 'PHONE VIEW';
+    position: fixed;
+    left: 50%;
+    bottom: 10px;
+    transform: translateX(-50%);
+    z-index: 1;
+    pointer-events: none;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    color: rgba(255, 255, 255, 0.2);
+  }
+
+  .screen,
+  .my-profile-modal,
+  .contact-overlay,
+  .tx-flash,
+  .points-modal,
+  .backup-offer-modal,
+  .deal-push {
+    inset: auto !important;
+    top: 50% !important;
+    left: 50% !important;
+    width: var(--phone-w) !important;
+    max-width: var(--phone-w);
+    height: var(--phone-h) !important;
+    max-height: var(--phone-h);
+    margin-top: calc(var(--phone-h) / -2);
+    margin-left: calc(var(--phone-w) / -2);
+    border-radius: 28px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.1),
+      0 0 0 12px #101010,
+      0 32px 96px rgba(0, 0, 0, 0.85);
+    z-index: 20;
+  }
+
+  /* Keep in-screen fixed chrome relative to the phone frame */
+  .screen > .back-btn,
+  .my-profile-modal .back-btn,
+  .contact-overlay .back-btn,
+  .points-modal .back-btn {
+    position: absolute;
+  }
+
+  .demo-banner {
+    inset: auto !important;
+    top: calc(50% - (var(--phone-h) / 2)) !important;
+    left: 50% !important;
+    width: var(--phone-w) !important;
+    max-width: var(--phone-w);
+    margin-left: calc(var(--phone-w) / -2);
+    border-radius: 28px 28px 0 0;
+    z-index: 60;
+  }
+
+  .throw-toast {
+    left: 50% !important;
+    right: auto !important;
+    width: calc(var(--phone-w) - 40px);
+    max-width: calc(var(--phone-w) - 40px);
+    transform: translateX(-50%);
+    bottom: calc(50% - (var(--phone-h) / 2) + 28px) !important;
+    z-index: 80;
+  }
+}
+
+/* Narrow tablets in landscape still get the phone frame */
+@media (min-width: 520px) and (max-height: 700px) {
+  :root {
+    --phone-h: calc(100dvh - 24px);
+  }
+}
