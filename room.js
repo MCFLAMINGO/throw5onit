@@ -331,6 +331,31 @@ function getRoomCode() { return room.code; }
 function getMyHeading() { return room.myHeading; }
 function isInRoom()     { return !!room.code; }
 
+
+/* ── STAGE / ROOM RAIN BURST ─────────────────────────────────────────── */
+const GLOBAL_RAIN_TOPIC = 'throw5/rain/burst';
+
+/** Broadcast a cinematic rain event to stage screens + room peers. */
+function publishRainBurst(payload) {
+  const msg = JSON.stringify({
+    event: 'rain_burst',
+    from: payload.from || null,
+    fromName: payload.fromName || 'SOMEONE',
+    amount: Number(payload.amount) || 0,
+    peers: Number(payload.peers) || 0,
+    total: Number(payload.total) || 0,
+    count: Number(payload.count) || 48,
+    roomCode: payload.roomCode || room.code || null,
+    ts: Date.now(),
+  });
+  // Room topic (phones in hangout)
+  if (room.client && room.code) {
+    try { room.client.publish(ROOM_PREFIX + room.code + '/rain', msg, { qos: 0 }); } catch(_) {}
+  }
+  // Global stage topic (projector /stage)
+  try { _globalPublish(GLOBAL_RAIN_TOPIC, msg, { qos: 0 }); } catch(_) {}
+}
+
 /* ── GLOBAL BET DISCOVERY (cross-device, no room code needed) ── */
 
 // Global retained topic — any phone tapping BET gets this instantly

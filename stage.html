@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>THROW — Stage Rain</title>
+  <meta name="theme-color" content="#000000" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&display=swap" rel="stylesheet" />
+  <script src="/mqtt.min.js"></script>
+  <script src="/qrcode.min.js"></script>
+  <style>
+    :root {
+      --accent: #00e5a0;
+      --gold: #f5c542;
+      --font: 'Space Grotesk', system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      background: #000;
+      color: #fff;
+      font-family: var(--font);
+    }
+    .stage {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background:
+        radial-gradient(ellipse 70% 50% at 50% 20%, rgba(0,229,160,0.12), transparent 60%),
+        radial-gradient(ellipse 50% 40% at 50% 100%, rgba(245,197,66,0.08), transparent 55%),
+        #000;
+    }
+    .brand {
+      position: absolute;
+      top: 4.5vh;
+      left: 0; right: 0;
+      text-align: center;
+      z-index: 5;
+      pointer-events: none;
+    }
+    .brand-name {
+      font-size: clamp(28px, 6vw, 72px);
+      font-weight: 800;
+      letter-spacing: 0.28em;
+      text-indent: 0.28em;
+    }
+    .brand-sub {
+      margin-top: 8px;
+      font-size: clamp(12px, 1.6vw, 18px);
+      color: rgba(255,255,255,0.45);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .idle {
+      text-align: center;
+      z-index: 4;
+      transition: opacity 0.4s ease;
+    }
+    .idle.hidden { opacity: 0; pointer-events: none; }
+    .idle-orb {
+      width: clamp(140px, 22vw, 260px);
+      height: clamp(140px, 22vw, 260px);
+      margin: 0 auto 28px;
+      border-radius: 50%;
+      border: 2px solid rgba(0,229,160,0.45);
+      box-shadow: 0 0 60px rgba(0,229,160,0.25), inset 0 0 40px rgba(0,229,160,0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: clamp(40px, 7vw, 80px);
+      animation: orbPulse 2.4s ease-in-out infinite;
+    }
+    @keyframes orbPulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 40px rgba(0,229,160,0.2); }
+      50% { transform: scale(1.04); box-shadow: 0 0 90px rgba(0,229,160,0.4); }
+    }
+    .idle-title {
+      font-size: clamp(22px, 4vw, 48px);
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+    .idle-copy {
+      margin-top: 12px;
+      font-size: clamp(14px, 2vw, 20px);
+      color: rgba(255,255,255,0.5);
+      max-width: 28em;
+      line-height: 1.45;
+      margin-left: auto;
+      margin-right: auto;
+      padding: 0 20px;
+    }
+    .burst-banner {
+      position: absolute;
+      top: 18%;
+      left: 0; right: 0;
+      text-align: center;
+      z-index: 6;
+      opacity: 0;
+      transform: translateY(12px) scale(0.96);
+      transition: opacity 0.35s ease, transform 0.35s ease;
+      pointer-events: none;
+    }
+    .burst-banner.show {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    .burst-from {
+      font-size: clamp(18px, 3vw, 36px);
+      color: var(--accent);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .burst-amt {
+      font-size: clamp(56px, 12vw, 160px);
+      font-weight: 800;
+      line-height: 1;
+      margin: 8px 0;
+      text-shadow: 0 0 40px rgba(0,229,160,0.35);
+    }
+    .burst-meta {
+      font-size: clamp(14px, 2.2vw, 24px);
+      color: rgba(255,255,255,0.55);
+    }
+    .rain-layer {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 3;
+    }
+    .cash-bill {
+      position: absolute;
+      top: -12%;
+      width: clamp(52px, 7vw, 96px);
+      height: clamp(28px, 3.8vw, 52px);
+      border-radius: 6px;
+      background: linear-gradient(135deg, #1a7a45 0%, #2ecc71 40%, #0d5c32 100%);
+      border: 1px solid rgba(255,255,255,0.35);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.45), inset 0 0 12px rgba(255,255,255,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: clamp(11px, 1.4vw, 18px);
+      color: #e8ffe8;
+      letter-spacing: 0.02em;
+      will-change: transform, opacity;
+      animation: stageFall linear forwards;
+    }
+    .cash-bill.gold {
+      background: linear-gradient(135deg, #b8860b 0%, #f5c542 45%, #8a6508 100%);
+      color: #1a1400;
+    }
+    @keyframes stageFall {
+      0% { transform: translate3d(0,0,0) rotate(0deg); opacity: 0; }
+      8% { opacity: 1; }
+      100% { transform: translate3d(var(--drift), 115vh, 0) rotate(var(--spin)); opacity: 0.15; }
+    }
+    .dock {
+      position: absolute;
+      bottom: 3.5vh;
+      left: 0; right: 0;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 0 4vw;
+      z-index: 8;
+      gap: 24px;
+    }
+    .dock-left, .dock-right {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .qr-wrap {
+      background: #fff;
+      padding: 10px;
+      border-radius: 14px;
+    }
+    #stage-qr { display: block; border-radius: 6px; }
+    .dock-label {
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.4);
+      text-align: center;
+    }
+    .code-pill {
+      font-size: clamp(20px, 3vw, 32px);
+      font-weight: 800;
+      letter-spacing: 0.2em;
+      color: var(--accent);
+      background: rgba(0,229,160,0.08);
+      border: 1px solid rgba(0,229,160,0.3);
+      border-radius: 999px;
+      padding: 10px 22px;
+    }
+    .live-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      margin-right: 8px;
+      box-shadow: 0 0 12px var(--accent);
+      animation: blink 1.2s infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+    .status {
+      font-size: 13px;
+      color: rgba(255,255,255,0.4);
+      letter-spacing: 0.08em;
+    }
+    .ticker {
+      position: absolute;
+      top: 14vh;
+      left: 0; right: 0;
+      text-align: center;
+      z-index: 5;
+      font-size: clamp(14px, 2vw, 22px);
+      color: rgba(255,255,255,0.35);
+      min-height: 1.4em;
+    }
+  </style>
+</head>
+<body>
+  <div class="stage" id="stage">
+    <div class="brand">
+      <div class="brand-name">THROW</div>
+      <div class="brand-sub"><span class="live-dot"></span>Stage rain · live</div>
+    </div>
+
+    <div class="ticker" id="ticker">Waiting for the first rain…</div>
+
+    <div class="burst-banner" id="burst-banner">
+      <div class="burst-from" id="burst-from">SOMEONE</div>
+      <div class="burst-amt" id="burst-amt">$0</div>
+      <div class="burst-meta" id="burst-meta">making it rain</div>
+    </div>
+
+    <div class="idle" id="idle">
+      <div class="idle-orb">💸</div>
+      <div class="idle-title">Make the room rain</div>
+      <div class="idle-copy">Put this on the projector. When anyone taps Make It Rain on THROW, the stage and every phone storm together.</div>
+    </div>
+
+    <div class="rain-layer" id="rain-layer"></div>
+
+    <div class="dock">
+      <div class="dock-left">
+        <div class="qr-wrap"><canvas id="stage-qr" width="140" height="140"></canvas></div>
+        <div class="dock-label">Scan to open THROW</div>
+      </div>
+      <div class="dock-right">
+        <div class="code-pill" id="stage-code">LIVE</div>
+        <div class="status" id="stage-status">Listening for rain…</div>
+        <div class="dock-label">Room / event code</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const MQTT_BROKER = 'wss://broker.emqx.io:8084/mqtt';
+    const GLOBAL_RAIN = 'throw5/rain/burst';
+    const params = new URLSearchParams(location.search);
+    const roomCode = (params.get('code') || params.get('crew') || 'LIVE').toUpperCase().slice(0, 8);
+    const APP_ORIGIN = location.origin;
+
+    document.getElementById('stage-code').textContent = roomCode;
+
+    // QR → open THROW (optionally with hangout code)
+    (function renderQr() {
+      const canvas = document.getElementById('stage-qr');
+      const url = roomCode && roomCode !== 'LIVE'
+        ? APP_ORIGIN + '/?crew=' + encodeURIComponent(roomCode)
+        : APP_ORIGIN + '/?fund=1';
+      if (typeof QRCode !== 'undefined') {
+        QRCode.toCanvas(canvas, url, { width: 140, margin: 1, color: { dark: '#000', light: '#fff' } }, () => {});
+      }
+    })();
+
+    function setTicker(msg) {
+      const el = document.getElementById('ticker');
+      if (el) el.textContent = msg;
+    }
+
+    function spawnStageRain(opts) {
+      const layer = document.getElementById('rain-layer');
+      const idle = document.getElementById('idle');
+      const banner = document.getElementById('burst-banner');
+      const count = Math.min(80, Math.max(28, Number(opts.count) || 48));
+      const amount = Number(opts.amount) || 0;
+      const peers = Number(opts.peers) || 0;
+      const from = opts.fromName || 'SOMEONE';
+      const total = Number(opts.total) || (amount * peers) || amount;
+
+      if (idle) idle.classList.add('hidden');
+      document.getElementById('burst-from').textContent = from;
+      document.getElementById('burst-amt').textContent = '$' + (total >= 1 ? total.toFixed(0) : total.toFixed(2));
+      document.getElementById('burst-meta').textContent =
+        peers > 1 ? ('× ' + peers + ' pockets · $' + amount.toFixed(2) + ' each') : 'making it rain';
+      banner.classList.add('show');
+      setTicker(from + ' just made it rain');
+
+      layer.innerHTML = '';
+      for (let i = 0; i < count; i++) {
+        const bill = document.createElement('div');
+        bill.className = 'cash-bill' + (Math.random() > 0.72 ? ' gold' : '');
+        bill.textContent = '$' + (amount >= 1 ? Math.round(amount) : amount.toFixed(0) || '5');
+        bill.style.left = (Math.random() * 100) + 'vw';
+        bill.style.setProperty('--drift', ((Math.random() - 0.5) * 180) + 'px');
+        bill.style.setProperty('--spin', ((Math.random() > 0.5 ? 1 : -1) * (180 + Math.random() * 540)) + 'deg');
+        bill.style.animationDuration = (1.6 + Math.random() * 2.2) + 's';
+        bill.style.animationDelay = (Math.random() * 0.9) + 's';
+        bill.style.opacity = String(0.85 + Math.random() * 0.15);
+        layer.appendChild(bill);
+      }
+
+      setTimeout(() => banner.classList.remove('show'), 4200);
+      setTimeout(() => {
+        layer.innerHTML = '';
+        if (idle) idle.classList.remove('hidden');
+        setTicker('Waiting for the next rain…');
+      }, 5200);
+    }
+
+    // Expose for local tests / manual trigger
+    window.__stageRain = spawnStageRain;
+
+    function connectRain() {
+      const status = document.getElementById('stage-status');
+      const clientId = 'stage_' + Math.random().toString(36).slice(2, 9);
+      const c = mqtt.connect(MQTT_BROKER, {
+        clientId, clean: true, connectTimeout: 8000, reconnectPeriod: 3000,
+      });
+      c.on('connect', () => {
+        if (status) status.textContent = 'Live · listening';
+        c.subscribe(GLOBAL_RAIN, { qos: 0 });
+        if (roomCode && roomCode !== 'LIVE') {
+          c.subscribe('throw5/room/' + roomCode + '/rain', { qos: 0 });
+        }
+      });
+      c.on('reconnect', () => { if (status) status.textContent = 'Reconnecting…'; });
+      c.on('error', () => { if (status) status.textContent = 'MQTT error — retrying'; });
+      c.on('message', (topic, buf) => {
+        try {
+          const data = JSON.parse(buf.toString());
+          if (!data || data.event !== 'rain_burst') return;
+          // Optional filter: if stage has a code, prefer matching bursts
+          if (roomCode && roomCode !== 'LIVE' && data.roomCode && String(data.roomCode).toUpperCase() !== roomCode) {
+            return;
+          }
+          spawnStageRain(data);
+        } catch (_) {}
+      });
+    }
+
+    if (typeof mqtt !== 'undefined') connectRain();
+    else {
+      document.getElementById('stage-status').textContent = 'MQTT missing';
+    }
+
+    // Demo burst via ?demo=1
+    if (params.get('demo') === '1') {
+      setTimeout(() => spawnStageRain({
+        fromName: 'TOKEN2049', amount: 5, peers: 12, total: 60, count: 64,
+      }), 900);
+    }
+  </script>
+</body>
+</html>
