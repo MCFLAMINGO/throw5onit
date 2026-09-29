@@ -3574,21 +3574,75 @@ function playThrowAnimation() {
   setTimeout(() => el.classList.add('hidden'), 700);
 }
 
-function moneyRain(count = 6) {
+
+/* ── Incoming rain spectacle (other phones / stage sync) ─────────────── */
+let _rainSubClient = null;
+function subscribeStageRain() {
+  if (typeof mqtt === 'undefined' || _rainSubClient) return;
+  try {
+    _rainSubClient = mqtt.connect(MQTT_BROKER, {
+      clientId: 'rain_' + Math.random().toString(36).slice(2, 8),
+      clean: true, connectTimeout: 5000, reconnectPeriod: 4000,
+    });
+    _rainSubClient.on('connect', () => {
+      _rainSubClient.subscribe('throw5/rain/burst', { qos: 0 });
+    });
+    _rainSubClient.on('message', (topic, buf) => {
+      try {
+        const data = JSON.parse(buf.toString());
+        if (!data || data.event !== 'rain_burst') return;
+        // Don't re-play our own burst (we already animated locally)
+        if (data.from && state.account?.address && data.from.toLowerCase() === state.account.address.toLowerCase()) return;
+        moneyRain(Math.min(40, data.count || 24), { cinematic: true, stage: true, amount: data.amount });
+        showToast((data.fromName || 'Someone') + ' made it rain');
+      } catch(_) {}
+    });
+  } catch(_) {}
+}
+
+function moneyRain(count = 6, opts) {
+  opts = opts || {};
+  const n = Math.min(64, Math.max(1, Number(count) || 6));
+  const amount = Number(opts.amount);
   const container = document.createElement('div');
-  container.className = 'money-rain';
+  container.className = 'money-rain' + (opts.stage ? ' money-rain-stage' : '');
   document.body.appendChild(container);
-  const bills = ['💵', '💴', '💶', '💷', '💰'];
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < n; i++) {
     const p = document.createElement('div');
-    p.className = 'money-particle';
-    p.textContent = bills[Math.floor(Math.random() * bills.length)];
-    p.style.left = Math.random() * 95 + 'vw';
-    const dur = 0.8 + Math.random() * 0.6;
-    p.style.animation = `rainFall ${dur}s ${Math.random() * 0.3}s linear forwards`;
+    const useCash = opts.cinematic || opts.stage || n >= 12 || Math.random() > 0.35;
+    if (useCash) {
+      p.className = 'money-particle cash-fall' + (Math.random() > 0.7 ? ' cash-gold' : '');
+      p.textContent = '$' + (amount >= 1 ? Math.round(amount) : (amount > 0 ? amount.toFixed(0) : '5'));
+    } else {
+      p.className = 'money-particle';
+      p.textContent = ['💵', '💴', '💶', '💷', '💰'][Math.floor(Math.random() * 5)];
+    }
+    p.style.left = (Math.random() * 94 + 1) + 'vw';
+    p.style.setProperty('--drift', ((Math.random() - 0.5) * 140) + 'px');
+    p.style.setProperty('--spin', ((Math.random() > 0.5 ? 1 : -1) * (200 + Math.random() * 500)) + 'deg');
+    const dur = (opts.stage ? 1.8 : 0.9) + Math.random() * (opts.stage ? 2.0 : 0.7);
+    p.style.animation = `rainFall ${dur}s ${Math.random() * 0.45}s linear forwards`;
     container.appendChild(p);
   }
-  setTimeout(() => container.remove(), 2000);
+  setTimeout(() => container.remove(), opts.stage ? 5200 : 2200);
+}
+
+function broadcastRainBurst(amount, peerCount, total) {
+  const payload = {
+    from: state.account?.address || null,
+    fromName: getHandle() || 'SOMEONE',
+    amount: Number(amount) || 0,
+    peers: Number(peerCount) || 0,
+    total: Number(total) || 0,
+    count: Math.min(72, 28 + peerCount * 4),
+    roomCode: (typeof getRoomCode === 'function' ? getRoomCode() : null) || null,
+  };
+  try {
+    if (typeof publishRainBurst === 'function') publishRainBurst(payload);
+  } catch (e) {
+    console.warn('[THROW] rain broadcast failed', e && e.message);
+  }
+  return payload;
 }
 
 // Make it rain — throw the selected amount at EVERY peer in the room (casino tip energy)
@@ -3613,8 +3667,9 @@ async function executeMakeItRain() {
   _raining = true;
   const btn = document.getElementById('btn-make-it-rain');
   if (btn) { btn.disabled = true; btn.textContent = 'RAINING…'; }
-  moneyRain(Math.min(24, 6 + peers.length * 3));
-  showTxFlash('💸', '$' + amount + ' × ' + peers.length, 'Making it rain…');
+  moneyRain(Math.min(48, 16 + peers.length * 4), { cinematic: true, stage: true, amount });
+  broadcastRainBurst(amount, peers.length, amount * peers.length);
+  showTxFlash('💸', '$' + amount + ' × ' + peers.length, 'Making it room rain…');
 
   let ok = 0;
   const fromAddr = state.account.address;
@@ -3634,7 +3689,11 @@ async function executeMakeItRain() {
   hideTxFlash();
   if (ok > 0) {
     showTxFlash('✅', '$' + (amount * ok).toFixed(2), 'Rained on ' + ok + ' pocket' + (ok === 1 ? '' : 's') + '!');
-    moneyRain(10);
+    moneyRain(18, { cinematic: true, amount });
+    try {
+      const shareRain = document.getElementById('btn-share-rain');
+      if (shareRain) shareRain.classList.remove('hidden');
+    } catch(_) {}
   } else {
     showToast('Rain failed — check balance');
   }
@@ -5007,6 +5066,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   /* ── Throw screen ── */
   const rainBtn = document.getElementById('btn-make-it-rain');
   if (rainBtn) rainBtn.onclick = () => executeMakeItRain();
+  const castStage = document.getElementById('btn-cast-stage');
+  if (castStage) castStage.onclick = () => {
+    const code = (typeof getRoomCode === 'function' && getRoomCode()) || '';
+    const url = location.origin + '/stage' + (code ? ('?code=' + encodeURIComponent(code)) : '');
+    if (navigator.share) {
+      navigator.share({ title: 'THROW Stage', text: 'Put this on the big screen — Make It Rain.', url }).catch(() => {
+        navigator.clipboard?.writeText(url); showToast('Stage link copied');
+      });
+    } else {
+      navigator.clipboard?.writeText(url).then(() => showToast('Stage link copied — open on projector')).catch(() => {
+        window.open(url, '_blank', 'noopener');
+      });
+    }
+  };
+  const shareRain = document.getElementById('btn-share-rain');
+  if (shareRain) shareRain.onclick = () => {
+    const msg = 'I just made it rain on THROW 💸 Point. Flick. Real dollars. Built for the room — not the feed. ' + (typeof X_HANDLE !== 'undefined' ? X_HANDLE : '') + ' ' + location.origin;
+    if (typeof shareOnX === 'function') shareOnX(msg);
+    else window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(msg), '_blank', 'noopener');
+  };
   document.getElementById('btn-qr-receive').onclick = () => openAddCashScreen();
   document.getElementById('btn-load-cash').onclick  = () => openAddCashScreen();
   const _loadTonight = document.getElementById('btn-load-tonight');

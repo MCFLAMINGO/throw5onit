@@ -1,4 +1,4 @@
-const VERSION = 'v159';
+const VERSION = 'v160';
 const CACHE   = 'throw-' + VERSION;
 
 const ASSETS = [
@@ -15,6 +15,7 @@ const ASSETS = [
   '/mqtt.min.js',
   '/icon-192.png',
   '/icon-512.png',
+  '/stage.html',
 ];
 
 self.addEventListener('install', e => {

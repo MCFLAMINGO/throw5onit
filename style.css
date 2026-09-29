@@ -1914,7 +1914,44 @@ h1 { font-size: 18px; font-weight: 700; }
   animation: rainFall linear forwards;
 }
 @keyframes rainFall {
-  to { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+  to { transform: translate3d(var(--drift, 0px), 110vh, 0) rotate(var(--spin, 720deg)); opacity: 0; }
+}
+.money-particle.cash-fall {
+  width: 54px;
+  height: 30px;
+  font-size: 13px;
+  font-weight: 800;
+  font-family: var(--font);
+  color: #e8ffe8;
+  letter-spacing: 0.02em;
+  border-radius: 5px;
+  background: linear-gradient(135deg, #1a7a45 0%, #2ecc71 42%, #0d5c32 100%);
+  border: 1px solid rgba(255,255,255,0.35);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.4), inset 0 0 10px rgba(255,255,255,0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  top: -50px;
+}
+.money-particle.cash-fall.cash-gold {
+  background: linear-gradient(135deg, #b8860b 0%, #f5c542 45%, #8a6508 100%);
+  color: #1a1400;
+}
+.money-rain-stage .money-particle.cash-fall {
+  width: 64px;
+  height: 36px;
+  font-size: 15px;
+}
+.make-it-rain-btn {
+  box-shadow: 0 0 28px rgba(245, 158, 11, 0.35);
+  animation: rainBtnPulse 2.2s ease-in-out infinite;
+}
+@keyframes rainBtnPulse {
+  0%, 100% { box-shadow: 0 0 18px rgba(245, 158, 11, 0.25); }
+  50% { box-shadow: 0 0 36px rgba(239, 68, 68, 0.45); }
+}
+.cast-stage-btn {
+  opacity: 0.85;
 }
 
 /* ── SCROLLBAR (webkit) ───────────────────────────────────────────────── */
