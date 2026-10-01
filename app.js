@@ -325,6 +325,8 @@ const state = {
   throwAmount: 5,
   throwMethod: 'gesture',
   throwTarget: null,      // { name, addr } — contact selected on throw screen
+  throwMode: 'throw',     // 'throw' | 'add-friend'
+  pendingFriendName: null,
   pendingThrowId: null,   // dedup: only process each throwId once
 
   // Room state
@@ -2351,12 +2353,14 @@ function openThrowScreen(preselect) {
     return;
   }
   state.throwTarget = preselect || null;
+  state.throwMode = 'throw';
+  state.pendingFriendName = null;
   renderThrowContacts(preselect);
   setupThrowScreen();
-  renderOrbSponsor();
-  renderSponsorStrips();
+  try { renderOrbSponsor(); } catch(_) {}
+  try { renderSponsorStrips(); } catch(_) {}
+  syncThrowHoldUI({ pulse: false });
   showScreen('throw');
-  // Look for an open Hold'em table — point + THROW sits you down
   try { scanNearbyPokerTable(); } catch(_) {}
 }
 
@@ -2365,7 +2369,7 @@ function renderThrowContacts(preselect) {
   if (!strip) return;
   const contacts = getContacts();
   if (!contacts.length) {
-    strip.innerHTML = '<div class="throw-no-contacts">No friends yet — add one with ADD FRIEND</div>';
+    strip.innerHTML = '<div class="throw-no-contacts">No friends yet — hold &amp; say “add friend …” then swipe</div>';
     return;
   }
   strip.innerHTML = contacts.map(c => {
@@ -2378,9 +2382,11 @@ function renderThrowContacts(preselect) {
     </div>`;
   }).join('');
   strip.querySelectorAll('.throw-contact-chip').forEach(chip => {
-    chip.onclick = () => selectThrowTarget(chip.dataset.name, chip.dataset.addr, chip);
+    chip.onclick = (e) => {
+      e.stopPropagation();
+      selectThrowTarget(chip.dataset.name, chip.dataset.addr, chip);
+    };
   });
-  // If preselected, fire selectThrowTarget to update orb
   if (preselect) {
     const sel = strip.querySelector('.throw-contact-chip.selected');
     if (sel) selectThrowTarget(sel.dataset.name, sel.dataset.addr, sel);
@@ -2388,19 +2394,12 @@ function renderThrowContacts(preselect) {
 }
 
 function selectThrowTarget(name, addr, chipEl) {
-  // Deselect all
   document.querySelectorAll('.throw-contact-chip').forEach(c => c.classList.remove('selected'));
   chipEl && chipEl.classList.add('selected');
   state.throwTarget = { name, addr };
-
-  // Update orb label and hint
-  const orbLabel = document.getElementById('throw-orb-label');
-  const orbHint  = document.getElementById('throw-orb-hint');
-  const orbSub   = document.getElementById('throw-orb-sub');
-  if (orbLabel) orbLabel.textContent = '$' + state.throwAmount;
-  if (orbHint)  orbHint.textContent  = 'Hold & draw toward ' + name.toUpperCase().slice(0,6);
-  if (orbSub)   orbSub.textContent   = 'Hold · flick · release — $' + state.throwAmount + ' flies';
-  // Show tap fallback button
+  state.throwMode = 'throw';
+  state.pendingFriendName = null;
+  syncThrowHoldUI({ pulse: false });
   const tapBtn = document.getElementById('btn-tap-throw');
   if (tapBtn) tapBtn.classList.remove('hidden');
 }
@@ -2409,8 +2408,195 @@ async function throwToContact(name, addr) {
   await executeProximityThrow({ name, addr });
 }
 
+function setThrowAmount(val, opts) {
+  opts = opts || {};
+  let a = Math.round(Number(val) || 0);
+  if (a < 1) a = 1;
+  if (a > 50) a = 50;
+  if (state.total > 0 && a > state.total) a = Math.max(1, Math.floor(state.total));
+  state.throwAmount = a;
+  syncThrowHoldUI({ pulse: !!opts.pulse });
+  document.querySelectorAll('#throw-amounts-scroll .qbtn').forEach(b => {
+    b.classList.toggle('active', parseFloat(b.dataset.amount) === a);
+  });
+  const fee = getThrowFee(a);
+  const net = (a - fee).toFixed(2);
+  const feeEl = document.getElementById('throw-fee-line');
+  if (feeEl) feeEl.textContent = `$${fee.toFixed(2)} fee — recipient gets $${net}`;
+  const orbLabel = document.getElementById('throw-orb-label');
+  if (orbLabel) orbLabel.textContent = '$' + a;
+}
+
+function syncThrowHoldUI(opts) {
+  opts = opts || {};
+  const amountEl = document.getElementById('throw-amount-display');
+  const toEl = document.getElementById('throw-hold-to');
+  const hintEl = document.getElementById('throw-hold-hint');
+  const modeEl = document.getElementById('throw-hold-mode');
+  const a = state.throwAmount || 5;
+
+  if (amountEl) {
+    amountEl.textContent = '$' + a;
+    if (opts.pulse) {
+      amountEl.classList.remove('pulse');
+      void amountEl.offsetWidth;
+      amountEl.classList.add('pulse');
+      setTimeout(() => amountEl.classList.remove('pulse'), 800);
+      try { if (navigator.vibrate) navigator.vibrate(24); } catch(_) {}
+    }
+  }
+
+  if (state.throwMode === 'add-friend') {
+    const pending = state.pendingFriendName || 'FRIEND';
+    if (toEl) toEl.textContent = 'Add ' + pending;
+    if (modeEl) modeEl.textContent = 'Friend mode — aim & swipe up';
+    if (hintEl && !opts.keepHint) {
+      hintEl.textContent = state.inRoom
+        ? 'Point at their phone · swipe up to dock'
+        : 'Swipe up to scan & dock — or open ADD FRIEND';
+    }
+    const tapBtn = document.getElementById('btn-tap-throw');
+    if (tapBtn) {
+      tapBtn.textContent = 'TAP TO DOCK';
+      tapBtn.classList.remove('hidden');
+    }
+    return;
+  }
+
+  if (state.throwTarget) {
+    if (toEl) toEl.textContent = '→ ' + String(state.throwTarget.name || '').toUpperCase().slice(0, 12);
+    if (modeEl) modeEl.textContent = 'Armed · swipe up to throw';
+    if (hintEl && !opts.keepHint) hintEl.textContent = 'Swipe up — $' + a + ' flies to ' + state.throwTarget.name;
+    const tapBtn = document.getElementById('btn-tap-throw');
+    if (tapBtn) {
+      tapBtn.textContent = 'TAP TO THROW';
+      tapBtn.classList.remove('hidden');
+    }
+  } else {
+    if (toEl) toEl.textContent = '';
+    if (modeEl) modeEl.textContent = '';
+    if (hintEl && !opts.keepHint) {
+      hintEl.textContent = 'Hold 1s · say “$5 to Erik” · swipe up';
+    }
+    const tapBtn = document.getElementById('btn-tap-throw');
+    if (tapBtn) tapBtn.classList.add('hidden');
+  }
+}
+
+/* ── Voice parse: "$5 to Erik", "add friend Bill Lee" ── */
+function normalizeFriendName(raw) {
+  const cleaned = String(raw || '')
+    .replace(/[^a-zA-Z0-9\s'-]/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+  if (!cleaned) return '';
+  const parts = cleaned.split(' ');
+  // Prefer first token as handle (app stores ≤6 chars)
+  const first = parts[0].toUpperCase().slice(0, 6);
+  return first;
+}
+
+function matchContactBySpokenName(spoken) {
+  const contacts = getContacts();
+  if (!contacts.length || !spoken) return null;
+  const norm = String(spoken).toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim();
+  const tokens = norm.split(/\s+/).filter(Boolean);
+  const first = (tokens[0] || '').slice(0, 6);
+  const compact = tokens.join('').slice(0, 6);
+
+  const score = (c) => {
+    const n = (c.name || '').toLowerCase();
+    if (!n) return 0;
+    if (n === first || n === compact) return 100;
+    if (n.startsWith(first) || first.startsWith(n)) return 80;
+    if (tokens.some(t => n.startsWith(t.slice(0, 6)) || t.startsWith(n))) return 60;
+    if (n.includes(first.slice(0, Math.min(3, first.length)))) return 30;
+    return 0;
+  };
+
+  let best = null, bestScore = 0;
+  contacts.forEach(c => {
+    const s = score(c);
+    if (s > bestScore) { bestScore = s; best = c; }
+  });
+  return bestScore >= 60 ? best : null;
+}
+
+function parseThrowVoice(transcript) {
+  const text = String(transcript || '').toLowerCase().trim();
+  if (!text) return { mode: null };
+
+  // "add friend Bill Lee" / "add Bill"
+  const addMatch = text.match(/\badd(?:\s+friend)?\s+(.+)/i);
+  if (addMatch) {
+    const friendName = normalizeFriendName(addMatch[1]);
+    if (friendName) return { mode: 'add-friend', friendName, raw: addMatch[1].trim() };
+  }
+
+  // Amount: $5 / 5 dollars / five bucks (digits only for reliability)
+  let amount = null;
+  const amtMatch = text.match(/\$?\s*(\d+(?:\.\d+)?)\s*(?:dollars?|bucks?)?/);
+  if (amtMatch) {
+    amount = Math.min(50, Math.max(1, Math.round(parseFloat(amtMatch[1]))));
+  }
+
+  // Recipient: "to Erik Osol" / "for Bill"
+  let recipientRaw = null;
+  const toMatch = text.match(/\b(?:to|for)\s+([a-z][a-z0-9\s'-]{0,40})/i);
+  if (toMatch) {
+    recipientRaw = toMatch[1].replace(/\s+(please|thanks|thank you).*$/i, '').trim();
+  }
+
+  const recipient = recipientRaw ? matchContactBySpokenName(recipientRaw) : null;
+  return { mode: 'throw', amount, recipientRaw, recipient };
+}
+
+function applyThrowVoiceResult(parsed) {
+  if (!parsed || !parsed.mode) return;
+
+  if (parsed.mode === 'add-friend') {
+    state.throwMode = 'add-friend';
+    state.pendingFriendName = parsed.friendName;
+    state.throwTarget = null;
+    document.querySelectorAll('.throw-contact-chip').forEach(c => c.classList.remove('selected'));
+    syncThrowHoldUI({ pulse: true });
+    showToast('Add ' + parsed.friendName + ' — aim & swipe up');
+    return;
+  }
+
+  state.throwMode = 'throw';
+  state.pendingFriendName = null;
+  if (parsed.amount != null) setThrowAmount(parsed.amount, { pulse: true });
+  if (parsed.recipient) {
+    const chip = document.querySelector(
+      '.throw-contact-chip[data-addr="' + parsed.recipient.addr + '"]'
+    );
+    selectThrowTarget(parsed.recipient.name, parsed.recipient.addr, chip);
+    showToast('$' + (parsed.amount || state.throwAmount) + ' → ' + parsed.recipient.name);
+  } else if (parsed.recipientRaw) {
+    syncThrowHoldUI({ pulse: parsed.amount != null });
+    showToast('No match for “' + parsed.recipientRaw + '” — pick a chip or add friend');
+  } else if (parsed.amount != null) {
+    showToast('$' + parsed.amount + ' locked — pick who, then swipe up');
+  }
+}
+
+/* ── Hold surface: 1s hold → voice · horizontal slide amount · swipe up throw ── */
+const throwHold = {
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+  startT: 0,
+  holdTimer: null,
+  listening: false,
+  armed: false,
+  slidingAmount: false,
+  amountAtStart: 5,
+  recognition: null,
+  wired: false,
+};
+
 function setupThrowScreen() {
-  // Amount buttons — scroll strip
   const qbtns = document.querySelectorAll('#throw-amounts-scroll .qbtn');
   qbtns.forEach(b => {
     const a = parseFloat(b.dataset.amount);
@@ -2419,103 +2605,328 @@ function setupThrowScreen() {
     const canAfford = state.total === 0 || a <= state.total;
     if (!canAfford) { b.style.opacity = '0.35'; b.style.pointerEvents = 'none'; }
     b.classList.toggle('active', a === state.throwAmount);
-    b.onclick = () => {
-      const a = parseFloat(b.dataset.amount);
-      if (a > state.total && state.total > 0) return;
-      state.throwAmount = a;
-      // Update orb label
-      const orbLabel = document.getElementById('throw-orb-label');
-      if (orbLabel) orbLabel.textContent = '$' + a;
-      qbtns.forEach(x => x.classList.remove('active'));
-      b.classList.add('active');
-      const fee = getThrowFee(a);
-      const net = (a - fee).toFixed(2);
-      document.getElementById('throw-fee-line').textContent = `$${fee.toFixed(2)} fee — recipient gets $${net}`;
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const val = parseFloat(b.dataset.amount);
+      if (val > state.total && state.total > 0) return;
+      setThrowAmount(val, { pulse: true });
     };
   });
 
-  // Wire throw orb — hold + flick fires proximity throw
+  setupThrowHoldSurface();
+  setupThrowAmountType();
+  setupVoice();
+}
+
+function setupThrowAmountType() {
+  const wrap = document.getElementById('throw-hold-amount-wrap');
+  const display = document.getElementById('throw-amount-display');
+  const input = document.getElementById('throw-amount-type');
+  if (!wrap || !display || !input) return;
+
+  const commit = () => {
+    const val = parseFloat(input.value);
+    input.classList.add('hidden');
+    display.classList.remove('hidden');
+    if (!isNaN(val) && val >= 1) setThrowAmount(val, { pulse: true });
+  };
+
+  display.onclick = (e) => {
+    e.stopPropagation();
+    // Double-path: long press is hold surface; tap amount opens type fallback
+    if (throwHold.listening || throwHold.pointerId != null) return;
+    display.classList.add('hidden');
+    input.classList.remove('hidden');
+    input.value = String(state.throwAmount || 5);
+    input.focus();
+    input.select();
+  };
+  input.onclick = (e) => e.stopPropagation();
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') {
+      input.classList.add('hidden');
+      display.classList.remove('hidden');
+    }
+  };
+  input.onblur = () => commit();
+}
+
+function getThrowSpeechRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+  if (throwHold.recognition) return throwHold.recognition;
+  const sr = new SR();
+  sr.lang = 'en-US';
+  sr.interimResults = false;
+  sr.maxAlternatives = 1;
+  sr.onresult = (e) => {
+    const text = e.results?.[0]?.[0]?.transcript || '';
+    const parsed = parseThrowVoice(text);
+    applyThrowVoiceResult(parsed);
+    stopThrowListening({ keepArmed: true });
+  };
+  sr.onerror = () => {
+    stopThrowListening({});
+    const hint = document.getElementById('throw-hold-hint');
+    if (hint) hint.textContent = 'Didn’t catch that — hold again or slide amount';
+  };
+  sr.onend = () => {
+    throwHold.listening = false;
+    const surface = document.getElementById('throw-hold-surface');
+    surface?.classList.remove('listening');
+  };
+  throwHold.recognition = sr;
+  return sr;
+}
+
+function startThrowListening() {
+  const surface = document.getElementById('throw-hold-surface');
+  const hint = document.getElementById('throw-hold-hint');
+  const sr = getThrowSpeechRecognition();
+  if (!sr) {
+    if (hint) hint.textContent = 'Voice unavailable — slide amount · pick friend · swipe up';
+    surface?.classList.add('armed');
+    throwHold.armed = true;
+    return;
+  }
+  throwHold.listening = true;
+  surface?.classList.add('listening');
+  if (hint) hint.textContent = 'Listening… “$5 to Erik” or “add friend Bill”';
+  try { sr.start(); } catch(_) {
+    // Already started — ignore
+  }
+}
+
+function stopThrowListening(opts) {
+  opts = opts || {};
+  throwHold.listening = false;
+  const surface = document.getElementById('throw-hold-surface');
+  surface?.classList.remove('listening');
+  try { throwHold.recognition?.stop(); } catch(_) {}
+  if (opts.keepArmed) {
+    throwHold.armed = true;
+    surface?.classList.add('armed');
+  }
+}
+
+function resetThrowHoldClasses() {
+  const surface = document.getElementById('throw-hold-surface');
+  if (!surface) return;
+  surface.classList.remove('holding', 'listening', 'armed', 'firing');
+}
+
+async function fireThrowFromHold() {
+  const surface = document.getElementById('throw-hold-surface');
+  if (state.throwMode === 'add-friend') {
+    await executeAddFriendThrow();
+    return;
+  }
+  if (shouldJoinPokerInsteadOfThrow(state.throwTarget)) {
+    surface?.classList.add('firing');
+    await joinNearbyPokerTable();
+    return;
+  }
+  if (!state.throwTarget) {
+    // Aim at room peer if available
+    if (state.inRoom && typeof findTarget === 'function') {
+      const aimed = findTarget(typeof room !== 'undefined' ? room.myHeading : 0);
+      if (aimed?.addr) {
+        state.throwTarget = { name: aimed.name || aimed.addr.slice(0, 6), addr: aimed.addr };
+      }
+    }
+  }
+  if (!state.throwTarget) {
+    showToast(state.nearbyPoker
+      ? 'Point at Hold\'em — or pick a friend'
+      : 'Pick a friend — or say “$5 to …”');
+    const strip = document.getElementById('throw-contacts-strip');
+    if (strip) {
+      strip.style.animation = 'none';
+      void strip.offsetWidth;
+      strip.style.animation = 'orbPulse 0.4s ease 2';
+    }
+    return;
+  }
+  surface?.classList.add('firing');
+  await executeProximityThrow(state.throwTarget);
+}
+
+async function executeAddFriendThrow() {
+  const name = state.pendingFriendName || 'FRIEND';
+  // Prefer aimed room peer
+  let peer = null;
+  if (state.inRoom && typeof findTarget === 'function') {
+    peer = findTarget(typeof room !== 'undefined' ? room.myHeading : 0);
+  }
+  if (!peer && state.roomPeers?.length === 1) peer = state.roomPeers[0];
+
+  if (peer?.addr) {
+    upsertContact(name, peer.addr);
+    const myAddr = state.account?.address;
+    const myName = (getHandle() || myAddr?.slice(0, 6) || '').toUpperCase().slice(0, 6);
+    if (myAddr) _notifyContactAdded(peer.addr, myAddr, myName);
+    state.throwMode = 'throw';
+    state.pendingFriendName = null;
+    state.throwTarget = { name, addr: peer.addr };
+    renderThrowContacts(state.throwTarget);
+    syncThrowHoldUI({ pulse: true });
+    showToast('Docked with ' + name + ' — you\'re friends');
+    try { if (navigator.vibrate) navigator.vibrate([20, 40, 20]); } catch(_) {}
+    return;
+  }
+
+  // Fall back to dock scan / hangout
+  showToast('Open ADD FRIEND — scan ' + name + '\'s phone');
+  state.throwMode = 'throw';
+  openDockScreen();
+  // Prefill dock gift name if present
+  const nameEl = document.getElementById('dock-friend-name');
+  if (nameEl) nameEl.value = name.slice(0, 6);
+  switchDockTab('existing');
+}
+
+function setupThrowHoldSurface() {
+  const surface = document.getElementById('throw-hold-surface');
+  if (!surface) return;
+
+  const HOLD_MS = 1000;
+  const SWIPE_UP = 72;
+  const SLIDE_PX = 28;
+
+  const isInteractiveTarget = (el) => {
+    if (!el || !el.closest) return false;
+    return !!el.closest(
+      'button, input, textarea, a, .throw-contact-chip, .qbtn, .throw-anyone-panel, .throw-addr-fallback, .throw-secondary'
+    );
+  };
+
+  const clearHoldTimer = () => {
+    if (throwHold.holdTimer) {
+      clearTimeout(throwHold.holdTimer);
+      throwHold.holdTimer = null;
+    }
+  };
+
+  const onPointerDown = (e) => {
+    if (isInteractiveTarget(e.target)) return;
+    if (e.button != null && e.button !== 0) return;
+    // Don't steal focus from type input
+    if (document.activeElement?.id === 'throw-amount-type') return;
+
+    throwHold.pointerId = e.pointerId;
+    throwHold.startX = e.clientX;
+    throwHold.startY = e.clientY;
+    throwHold.startT = Date.now();
+    throwHold.slidingAmount = false;
+    throwHold.amountAtStart = state.throwAmount || 5;
+    throwHold.armed = !!(state.throwTarget || state.throwMode === 'add-friend');
+    surface.classList.add('holding');
+    if (throwHold.armed) surface.classList.add('armed');
+
+    try { surface.setPointerCapture(e.pointerId); } catch(_) {}
+
+    clearHoldTimer();
+    throwHold.holdTimer = setTimeout(() => {
+      throwHold.holdTimer = null;
+      startThrowListening();
+    }, HOLD_MS);
+  };
+
+  const onPointerMove = (e) => {
+    if (throwHold.pointerId == null || e.pointerId !== throwHold.pointerId) return;
+    const dx = e.clientX - throwHold.startX;
+    const dy = e.clientY - throwHold.startY;
+
+    // Horizontal slide → amount (when not clearly swiping up)
+    if (!throwHold.slidingAmount && Math.abs(dx) > SLIDE_PX && Math.abs(dx) > Math.abs(dy) * 1.15) {
+      throwHold.slidingAmount = true;
+      clearHoldTimer();
+      stopThrowListening({});
+    }
+    if (throwHold.slidingAmount) {
+      const steps = Math.round(dx / 36);
+      const amounts = [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50];
+      let idx = amounts.indexOf(throwHold.amountAtStart);
+      if (idx < 0) idx = amounts.findIndex(a => a >= throwHold.amountAtStart);
+      if (idx < 0) idx = 1;
+      const next = amounts[Math.max(0, Math.min(amounts.length - 1, idx + steps))];
+      if (next !== state.throwAmount) setThrowAmount(next, { pulse: false });
+      const hint = document.getElementById('throw-hold-hint');
+      if (hint) hint.textContent = 'Amount $' + next + ' — swipe up to throw';
+      return;
+    }
+
+    // Swipe up while holding / after listen
+    if (dy < -SWIPE_UP && Math.abs(dy) > Math.abs(dx)) {
+      clearHoldTimer();
+      stopThrowListening({ keepArmed: true });
+      throwHold.pointerId = null;
+      try { surface.releasePointerCapture(e.pointerId); } catch(_) {}
+      fireThrowFromHold();
+    }
+  };
+
+  const onPointerUp = (e) => {
+    if (throwHold.pointerId == null || e.pointerId !== throwHold.pointerId) return;
+    clearHoldTimer();
+    const dy = e.clientY - throwHold.startY;
+    const dx = e.clientX - throwHold.startX;
+    const heldLong = Date.now() - throwHold.startT >= HOLD_MS;
+
+    // Swipe up on release
+    if (dy < -SWIPE_UP && Math.abs(dy) > Math.abs(dx)) {
+      stopThrowListening({ keepArmed: true });
+      throwHold.pointerId = null;
+      surface.classList.remove('holding');
+      fireThrowFromHold();
+      return;
+    }
+
+    if (!heldLong && !throwHold.listening && !throwHold.slidingAmount) {
+      stopThrowListening({});
+    }
+    throwHold.pointerId = null;
+    throwHold.slidingAmount = false;
+    surface.classList.remove('holding');
+    if (!throwHold.armed && state.throwMode !== 'add-friend' && !state.throwTarget) {
+      surface.classList.remove('armed');
+    }
+    syncThrowHoldUI({ keepHint: throwHold.listening });
+  };
+
+  if (!throwHold.wired) {
+    surface.addEventListener('pointerdown', onPointerDown);
+    surface.addEventListener('pointermove', onPointerMove);
+    surface.addEventListener('pointerup', onPointerUp);
+    surface.addEventListener('pointercancel', onPointerUp);
+    throwHold.wired = true;
+  }
+
+  // Tap-to-throw fallback
+  const tapBtn = document.getElementById('btn-tap-throw');
+  if (tapBtn) {
+    tapBtn.onclick = async (e) => {
+      e.stopPropagation();
+      await fireThrowFromHold();
+    };
+    if (state.throwTarget || state.throwMode === 'add-friend') tapBtn.classList.remove('hidden');
+  }
+
+  resetThrowHoldClasses();
+  // Keep orb wiring as no-op safe for any leftover callers
   setupThrowOrb();
 }
 
 function setupThrowOrb() {
-  const orb     = document.getElementById('throw-orb');
-  const orbWrap = document.getElementById('throw-orb-wrap');
-  const orbHint = document.getElementById('throw-orb-hint');
-  const orbSub  = document.getElementById('throw-orb-sub');
-  if (!orb) return;
+  const orb = document.getElementById('throw-orb');
+  if (!orb || orb.closest?.('.throw-legacy-stubs')) return;
+  // Legacy orb path — unused on bright hold surface
+}
 
-  orb.classList.remove('charging', 'fired');
-
-  const startThrow = async () => {
-    // Open Hold'em nearby — THROW sits you without picking a contact
-    if (shouldJoinPokerInsteadOfThrow(state.throwTarget)) {
-      orb.classList.add('fired');
-      if (orbHint) orbHint.textContent = 'Joining…';
-      await joinNearbyPokerTable();
-      return;
-    }
-    if (!state.throwTarget) {
-      // Pulse the contacts strip to hint user to pick someone
-      const strip = document.getElementById('throw-contacts-strip');
-      if (strip) {
-        strip.style.animation = 'none';
-        void strip.offsetWidth;
-        strip.style.animation = 'orbPulse 0.4s ease 2';
-      }
-      showToast(state.nearbyPoker
-        ? '🃏 Tap THROW again to sit at Hold\'em — or pick a friend to send cash'
-        : '👆 Pick a friend first');
-      return;
-    }
-
-    // Request motion permission on first use (iOS)
-    const hasPerm = await requestMotionPermission();
-    if (!hasPerm) {
-      showToast('⚠ Allow motion in Settings to throw');
-      return;
-    }
-
-    orb.classList.add('charging');
-    if (orbHint) orbHint.textContent = 'FLICK!';
-
-    // Start gesture capture — fires on flick
-    startGestureCapture(async () => {
-      orb.classList.remove('charging');
-      orb.classList.add('fired');
-      if (orbHint) orbHint.textContent = 'Thrown! ✓';
-      await executeProximityThrow(state.throwTarget);
-    });
-  };
-
-  const cancelThrow = () => {
-    if (orb.classList.contains('fired')) return;
-    stopGestureCapture();
-    orb.classList.remove('charging', 'fired');
-    if (orbHint) orbHint.textContent = state.throwTarget
-      ? 'Hold & draw toward ' + state.throwTarget.name.slice(0,6).toUpperCase()
-      : 'Hold & draw';
-  };
-
-  orb.ontouchstart = orb.onmousedown = startThrow;
-  orb.ontouchend   = orb.onmouseup   = cancelThrow;
-
-  // Tap-to-throw fallback — same flow, no gesture required
-    const tapBtn = document.getElementById('btn-tap-throw');
-  if (tapBtn) {
-    tapBtn.onclick = async () => {
-      if (shouldJoinPokerInsteadOfThrow(state.throwTarget)) {
-        orb.classList.add('fired');
-        if (orbHint) orbHint.textContent = 'Joining…';
-        await joinNearbyPokerTable();
-        return;
-      }
-      if (!state.throwTarget) { showToast('\uD83D\uDC46 Pick a friend first'); return; }
-      orb.classList.add('fired');
-      if (orbHint) orbHint.textContent = 'Thrown! \u2713';
-      await executeProximityThrow(state.throwTarget);
-    };
-  }
+function setupVoice() {
+  // Voice is driven by hold surface; keep API for callers
+  getThrowSpeechRecognition();
 }
 
 /* ── Sonic send: encode throwId suffix + amount ── */
@@ -3785,47 +4196,9 @@ bc.onmessage = (evt) => {
 };
 
 /* ═══════════════════════════════════════════════════════════════════════
-   18. VOICE AMOUNT
+   18. VOICE AMOUNT — driven by throw hold surface (see setupVoice above)
    ═════════════════════════════════════════════════════════════════════ */
-function setupVoice() {
-  const btn   = document.getElementById('voice-btn');
-  const label = document.getElementById('voice-label');
-  if (!btn) return;
-  if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-    btn.style.display = 'none';
-    return;
-  }
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const sr = new SR();
-  sr.lang = 'en-US';
-  sr.interimResults = false;
 
-  btn.onclick = () => {
-    btn.classList.add('listening');
-    label.textContent = 'Listening…';
-    sr.start();
-  };
-  sr.onresult = (e) => {
-    const text = e.results[0][0].transcript.toLowerCase();
-    const match = text.match(/(\d+(\.\d+)?)/);
-    if (match) {
-      const val = parseFloat(match[1]);
-      if (val >= 1 && val <= 50) {
-        state.throwAmount = val;
-        document.getElementById('throw-amount-display').textContent = '$' + val;
-        document.querySelectorAll('.throw-ui .qbtn').forEach(b => {
-          b.classList.toggle('active', parseFloat(b.dataset.amount) === val);
-        });
-      }
-    }
-    btn.classList.remove('listening');
-    label.textContent = 'Say it';
-  };
-  sr.onerror = () => {
-    btn.classList.remove('listening');
-    label.textContent = 'Say it';
-  };
-}
 
 
 /* ═══════════════════════════════════════════════════════════════════════

@@ -497,33 +497,27 @@
 </div>
 
 <!-- ═══ SCREEN: THROW ════════════════════════════════════════════════════════ -->
-<div id="screen-throw" class="screen">
-  <button type="button" class="back-btn" id="throw-back">← Wallet</button>
-  <div class="throw-ui">
-    <div class="screen-label">THROW CASH</div>
+<div id="screen-throw" class="screen throw-bright">
+  <button type="button" class="back-btn throw-back-bright" id="throw-back">← Wallet</button>
 
-    <!-- WHO — crew + anyone -->
-    <div class="throw-contacts-strip" id="throw-contacts-strip"></div>
+  <!-- Full-screen bright hold surface: hold 1s → speak → swipe up -->
+  <div class="throw-hold-surface" id="throw-hold-surface">
+    <div class="throw-hold-bg" aria-hidden="true"></div>
 
-    <!-- THROW TO ANYONE — no app required on their side -->
-    <div class="throw-anyone-panel" id="throw-anyone-panel">
-      <div class="throw-anyone-title">Throw at anyone</div>
-      <div class="throw-anyone-sub">They don’t need the app yet — you get a claim link. Money waits in a pot until they tap it.</div>
-      <div class="throw-anyone-row">
-        <input class="throw-anyone-input" id="throw-anyone-input" type="text"
-          placeholder="Name, phone, or email" autocomplete="off" />
-        <button class="throw-anyone-go" id="btn-throw-anyone" type="button">LINK</button>
+    <div class="throw-hold-stage" id="throw-hold-stage">
+      <div class="throw-hold-amount-wrap" id="throw-hold-amount-wrap">
+        <div class="throw-hold-amount" id="throw-amount-display">$5</div>
+        <input class="throw-amount-type hidden" id="throw-amount-type" type="number"
+          min="1" max="50" step="1" inputmode="decimal" enterkeyhint="done"
+          aria-label="Type amount" />
       </div>
-      <div class="throw-anyone-actions">
-        <button type="button" class="throw-mini-btn" id="btn-pick-contact">Contacts</button>
-        <button type="button" class="throw-mini-btn" id="btn-claim-qr">QR</button>
-        <button type="button" class="throw-mini-btn" id="btn-nfc-write" title="Write claim to NFC tag">NFC</button>
-        <button type="button" class="throw-mini-btn" id="btn-enable-push" title="Get notified when they claim">Notify</button>
-      </div>
-      <div class="throw-anyone-status" id="throw-anyone-status"></div>
+      <div class="throw-hold-to" id="throw-hold-to"></div>
+      <div class="throw-hold-hint" id="throw-hold-hint">Hold 1s · say “$5 to Erik” · swipe up</div>
+      <div class="throw-hold-mode" id="throw-hold-mode"></div>
+      <button type="button" class="btn-tap-throw hidden" id="btn-tap-throw">TAP TO THROW</button>
     </div>
 
-    <!-- STEP 2: HOW MUCH — single horizontal scroll row -->
+    <!-- HOW MUCH — horizontal slide (close to amount) -->
     <div class="throw-amounts-scroll" id="throw-amounts-scroll">
       <button class="qbtn" data-amount="1">$1</button>
       <button class="qbtn active" data-amount="5">$5</button>
@@ -539,55 +533,51 @@
     </div>
     <div class="throw-fee-line" id="throw-fee-line">$0.15 fee — recipient gets $4.85</div>
 
-    <!-- STEP 3: THROW ORB — hold + flick fires all methods simultaneously -->
-    <div class="throw-orb-arena" id="throw-orb-arena">
-      <!-- Left sponsor strip -->
-      <div class="sponsor-strip sponsor-strip-left" id="sponsor-strip-left" aria-label="Sponsored">
-        <div class="sponsor-strip-track" id="sponsor-track-left"></div>
-      </div>
+    <!-- WHO — crew chips -->
+    <div class="throw-contacts-strip" id="throw-contacts-strip"></div>
 
-      <div class="throw-orb-wrap" id="throw-orb-wrap">
-        <div class="throw-orb" id="throw-orb">
-          <div class="throw-orb-ring" id="throw-orb-ring"></div>
-          <div class="throw-orb-charge" id="throw-orb-charge"></div>
-          <!-- Sponsor logo layer — sits behind label -->
-          <div class="orb-sponsor-bg" id="orb-sponsor-bg"></div>
-          <div class="throw-orb-label" id="throw-orb-label">$5</div>
-          <div class="throw-orb-hint" id="throw-orb-hint">Hold &amp; flick</div>
+    <!-- Secondary tools (claim / address / rain) — below the hold stage -->
+    <div class="throw-secondary" id="throw-secondary">
+      <div class="throw-anyone-panel" id="throw-anyone-panel">
+        <div class="throw-anyone-title">Throw at anyone</div>
+        <div class="throw-anyone-sub">They don’t need the app yet — claim link waits until they tap.</div>
+        <div class="throw-anyone-row">
+          <input class="throw-anyone-input" id="throw-anyone-input" type="text"
+            placeholder="Name, phone, or email" autocomplete="off" />
+          <button class="throw-anyone-go" id="btn-throw-anyone" type="button">LINK</button>
         </div>
-        <div class="throw-orb-sub" id="throw-orb-sub">Pick a friend — or point at Hold'em to sit</div>
-        <button class="btn-tap-throw hidden" id="btn-tap-throw">TAP TO THROW</button>
+        <div class="throw-anyone-actions">
+          <button type="button" class="throw-mini-btn" id="btn-pick-contact">Contacts</button>
+          <button type="button" class="throw-mini-btn" id="btn-claim-qr">QR</button>
+          <button type="button" class="throw-mini-btn" id="btn-nfc-write" title="Write claim to NFC tag">NFC</button>
+          <button type="button" class="throw-mini-btn" id="btn-enable-push" title="Get notified when they claim">Notify</button>
+        </div>
+        <div class="throw-anyone-status" id="throw-anyone-status"></div>
       </div>
 
-      <!-- Right sponsor strip -->
-      <div class="sponsor-strip sponsor-strip-right" id="sponsor-strip-right" aria-label="Sponsored">
-        <div class="sponsor-strip-track" id="sponsor-track-right"></div>
+      <div class="throw-addr-fallback" id="throw-addr-row">
+        <div class="throw-addr-label">Have their wallet? Paste address</div>
+        <div class="throw-addr-row-inner">
+          <input class="throw-addr-input" id="throw-addr-input"
+            type="text" placeholder="0x…" autocomplete="off" autocorrect="off" spellcheck="false" />
+          <button class="throw-addr-send" id="throw-addr-send">THROW</button>
+        </div>
       </div>
+
+      <button class="make-it-rain-btn hidden" id="btn-make-it-rain">Make It Rain</button>
+      <button type="button" class="btn-ghost cast-stage-btn" id="btn-cast-stage">Cast stage · projector</button>
+      <button type="button" class="btn-ghost hidden" id="btn-share-rain">Share the rain</button>
     </div>
 
-    <!-- Post-throw sponsor attribution (fades in after throw, auto-hides) -->
-    <div class="throw-sponsor-credit hidden" id="throw-sponsor-credit"></div>
-
-    <!-- LAST RESORT: paste wallet address -->
-    <div class="throw-addr-fallback" id="throw-addr-row">
-      <div class="throw-addr-label">Have their wallet? Paste address</div>
-      <div class="throw-addr-row-inner">
-        <input class="throw-addr-input" id="throw-addr-input"
-          type="text" placeholder="0x…" autocomplete="off" autocorrect="off" spellcheck="false" />
-        <button class="throw-addr-send" id="throw-addr-send">THROW</button>
-      </div>
+    <!-- Hidden stubs — keep sponsor / orb helpers null-safe -->
+    <div class="throw-legacy-stubs" aria-hidden="true" hidden>
+      <div id="throw-orb-arena"><div id="sponsor-strip-left"><div id="sponsor-track-left"></div></div>
+        <div id="throw-orb-wrap"><div id="throw-orb"><div id="throw-orb-ring"></div><div id="throw-orb-charge"></div>
+          <div id="orb-sponsor-bg"></div><div id="throw-orb-label">$5</div><div id="throw-orb-hint"></div></div>
+          <div id="throw-orb-sub"></div></div>
+        <div id="sponsor-strip-right"><div id="sponsor-track-right"></div></div></div>
+      <div id="throw-sponsor-credit" class="hidden"></div>
     </div>
-
-    <!-- Make it rain (multi-target) — the TOKEN2049 room moment -->
-    <button class="make-it-rain-btn hidden" id="btn-make-it-rain">
-      💸 Make It Rain
-    </button>
-    <button type="button" class="btn-ghost cast-stage-btn" id="btn-cast-stage" style="margin-top:8px;width:100%;max-width:280px;font-size:13px">
-      Cast stage · projector
-    </button>
-    <button type="button" class="btn-ghost hidden" id="btn-share-rain" style="margin-top:6px;width:100%;max-width:280px;font-size:13px">
-      Share the rain
-    </button>
   </div>
 </div>
 
