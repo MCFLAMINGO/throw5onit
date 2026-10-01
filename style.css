@@ -612,9 +612,9 @@ h1 { font-size: 18px; font-weight: 700; }
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: min(52vh, 420px);
-  padding: 12px 24px 8px;
-  gap: 10px;
+  min-height: min(38vh, 300px);
+  padding: 12px 24px 4px;
+  gap: 8px;
   flex-shrink: 0;
   touch-action: none;
 }
@@ -626,7 +626,7 @@ h1 { font-size: 18px; font-weight: 700; }
   min-height: 1.1em;
 }
 .throw-hold-amount {
-  font-size: clamp(4.2rem, 18vw, 6.5rem);
+  font-size: clamp(3.6rem, 16vw, 5.8rem);
   font-weight: 800;
   letter-spacing: -0.05em;
   line-height: 1;

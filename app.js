@@ -2455,6 +2455,11 @@ function syncThrowHoldUI(opts) {
         ? 'Point at their phone · swipe up to dock'
         : 'Swipe up to scan & dock — or open ADD FRIEND';
     }
+    const tapBtn = document.getElementById('btn-tap-throw');
+    if (tapBtn) {
+      tapBtn.textContent = 'TAP TO DOCK';
+      tapBtn.classList.remove('hidden');
+    }
     return;
   }
 
@@ -2462,12 +2467,19 @@ function syncThrowHoldUI(opts) {
     if (toEl) toEl.textContent = '→ ' + String(state.throwTarget.name || '').toUpperCase().slice(0, 12);
     if (modeEl) modeEl.textContent = 'Armed · swipe up to throw';
     if (hintEl && !opts.keepHint) hintEl.textContent = 'Swipe up — $' + a + ' flies to ' + state.throwTarget.name;
+    const tapBtn = document.getElementById('btn-tap-throw');
+    if (tapBtn) {
+      tapBtn.textContent = 'TAP TO THROW';
+      tapBtn.classList.remove('hidden');
+    }
   } else {
     if (toEl) toEl.textContent = '';
     if (modeEl) modeEl.textContent = '';
     if (hintEl && !opts.keepHint) {
       hintEl.textContent = 'Hold 1s · say “$5 to Erik” · swipe up';
     }
+    const tapBtn = document.getElementById('btn-tap-throw');
+    if (tapBtn) tapBtn.classList.add('hidden');
   }
 }
 
