@@ -8,6 +8,7 @@ function fundChipText(total, cap) {
   const c = Number(cap) || CAP_USD;
   const room = Math.max(0, c - t);
   if (t < 0.01) return 'Empty pocket — load up to $' + c;
+  if (t > c) return '$' + t.toFixed(2) + ' in pocket — throws & wins stack';
   if (t >= 1) return 'Loaded $' + t.toFixed(2) + ' — ready to throw';
   return 'On you now: $' + t.toFixed(2) + ' · room for $' + room.toFixed(2);
 }
@@ -37,6 +38,7 @@ console.log('1) Fund chip copy');
   assert(fundChipText(0, 50) === 'Empty pocket — load up to $50', 'empty');
   assert(fundChipText(12.5, 50) === 'Loaded $12.50 — ready to throw', 'loaded');
   assert(fundChipText(0.5, 50) === 'On you now: $0.50 · room for $49.50', 'partial under $1');
+  assert(fundChipText(75, 50) === '$75.00 in pocket — throws & wins stack', 'over pocket load');
 }
 
 console.log('2) Receive share URL');

@@ -28,9 +28,13 @@ export default async function handler(req, res) {
   if (clear) {
     payload = '';
   } else if (explicitTopic) {
-    // Strip relay-only flags from retained claim bodies
-    const { topic: _t, retain: _r, clear: _c, ...rest } = body;
-    payload = JSON.stringify(rest);
+    // Strip relay-only flags + never publish escrow private keys on claim topics
+    const { topic: _t, retain: _r, clear: _c, escrowKey: _ek, ...rest } = body;
+    if (String(explicitTopic).indexOf('throw5/claims/') === 0) {
+      payload = JSON.stringify({ ...rest, hasEscrow: !!( _ek || rest.hasEscrow || rest.escrowAddr) });
+    } else {
+      payload = JSON.stringify(rest);
+    }
   } else {
     payload = JSON.stringify({ event, to, from, fromName, amount, throwId, ts: Date.now() });
   }

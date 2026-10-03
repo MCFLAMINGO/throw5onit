@@ -63,7 +63,7 @@ console.log('4) Local business deal push + QR');
 console.log('5) Pure helpers');
 {
   function buildAskFriendLoadText(name, url) {
-    return 'Hey — can you load me on THROW? Cap is $50 for tonight. I\'m ' + (name || 'here') + '. ' + url;
+    return 'Hey — can you load me on THROW? Pocket load is $50 for tonight. I\'m ' + (name || 'here') + '. ' + url;
   }
   function isDealAd(item) {
     if (!item) return false;

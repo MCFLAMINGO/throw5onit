@@ -1,12 +1,12 @@
 // Vercel serverless — co-signs an escrow TIP20 transfer as EXECUTOR feePayer
 // POST body: { fromPK, to, tokenAddr, amount }
-//   - fromPK    : private key of the escrow wallet (ephemeral — fresh wallet per bet)
+//   - fromPK    : private key of the escrow wallet (ephemeral — fresh wallet per bet/claim)
 //   - to        : recipient address
 //   - tokenAddr : USDC or pathUSD TIP20 address
 //   - amount    : USD amount (string or number) — converted to 6-decimal units
 //
-// The server uses TEMPO_EXECUTOR_PK from env to pay gas on behalf of the escrow wallet,
-// which typically has no pathUSD and therefore cannot pay Tempo's state-creation fee.
+// Hardened: max amount, valid addresses, refuse executor self-drain, TIP20 only.
+// The server uses TEMPO_EXECUTOR_PK from env to pay gas on behalf of the escrow wallet.
 //
 // Returns { hash, blockNumber } on success.
 
@@ -14,6 +14,19 @@ const TEMPO_RPC      = process.env.TEMPO_RPC || 'https://tempo-mainnet.core.chai
 const USDC_ADDR      = '0x20c000000000000000000000b9537d11c60e8b50';
 const PATHUSD_ADDR   = '0x20c0000000000000000000000000000000000000';
 const TEMPO_FEE_RATE = 0.000455;
+// Pot / claim payouts can exceed $50 pocket load — bound abuse, not wins
+const MAX_SPONSOR_USD = Number(process.env.SPONSOR_MAX_USD) || 500;
+
+function isHexAddr(a) {
+  return typeof a === 'string' && /^0x[a-fA-F0-9]{40}$/.test(a);
+}
+
+function normalizePk(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const hex = raw.replace(/\s/g, '').replace(/^0x/i, '');
+  if (!/^[a-fA-F0-9]{64}$/.test(hex)) return null;
+  return ('0x' + hex).toLowerCase();
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -25,7 +38,8 @@ export default async function handler(req, res) {
 
   const executorPKRaw = process.env.TEMPO_EXECUTOR_PK;
   if (!executorPKRaw) return res.status(500).json({ error: 'executor not configured' });
-  const executorPK = ('0x' + executorPKRaw.replace(/\s/g, '').replace(/^0x/, '')).toLowerCase();
+  const executorPK = normalizePk(executorPKRaw);
+  if (!executorPK) return res.status(500).json({ error: 'executor misconfigured' });
 
   const { fromPK, to, amount } = req.body || {};
   let { tokenAddr } = req.body || {};
@@ -34,17 +48,27 @@ export default async function handler(req, res) {
   }
 
   const amtNum = Number(amount);
-  if (!(amtNum > 0)) return res.status(400).json({ error: 'amount must be > 0' });
+  if (!(amtNum > 0) || !Number.isFinite(amtNum)) {
+    return res.status(400).json({ error: 'amount must be > 0' });
+  }
+  if (amtNum > MAX_SPONSOR_USD) {
+    return res.status(400).json({ error: 'amount exceeds max $' + MAX_SPONSOR_USD });
+  }
 
-  // Normalize
-  const escrowPK = ('0x' + fromPK.replace(/\s/g, '').replace(/^0x/, '')).toLowerCase();
-  const toAddr   = to.toLowerCase().startsWith('0x') ? to : '0x' + to;
+  const escrowPK = normalizePk(fromPK);
+  if (!escrowPK) return res.status(400).json({ error: 'invalid fromPK' });
+  if (escrowPK === executorPK) {
+    return res.status(400).json({ error: 'invalid from' });
+  }
+
+  const toAddr = String(to).toLowerCase().startsWith('0x') ? String(to) : '0x' + String(to);
+  if (!isHexAddr(toAddr)) return res.status(400).json({ error: 'invalid to address' });
 
   // tokenAddr='auto' (or omitted): pick whichever token the sender holds —
   // USDC first, pathUSD fallback — mirrors _escrowSend in app.js
   const AUTO = !tokenAddr || tokenAddr === 'auto';
   if (!AUTO) {
-    const tokenLc = tokenAddr.toLowerCase();
+    const tokenLc = String(tokenAddr).toLowerCase();
     if (tokenLc !== USDC_ADDR && tokenLc !== PATHUSD_ADDR) {
       return res.status(400).json({ error: 'tokenAddr must be USDC, pathUSD, or auto' });
     }
@@ -86,7 +110,7 @@ export default async function handler(req, res) {
       return Number(raw);
     }
 
-    // Helper: execute one leg
+    // Helper: execute one leg — never send more than requested / available
     async function doTransfer(tkn, amtRaw) {
       if (amtRaw <= 0n) return null;
       const result = await Actions.token.transferSync(client, {
@@ -125,7 +149,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'insufficient balance in both USDC and pathUSD' });
       }
     } else {
-      // Explicit token — clamp to available balance
+      // Explicit token — clamp to available balance (never drain more than requested)
       const rawBal  = await readBal(tokenAddr);
       const sendable = rawBal / 1e6 / (1 + TEMPO_FEE_RATE);
       const take    = Math.min(sendable, amtNum);

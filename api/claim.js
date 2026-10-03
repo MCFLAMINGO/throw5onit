@@ -2,7 +2,8 @@
 // POST /api/claim      — { action: 'create'|'redeem', … }
 //
 // Create: client already funded escrow; this re-publishes retained claim (backup).
-// Redeem: server drains escrow → toAddr via sponsor-tx path, clears claim.
+// Escrow private key must NOT be stored on public MQTT — live in share URL #ek= only.
+// Redeem: stays client-side via claim.js (has #ek= + sponsor-tx).
 
 const BROKER = 'wss://broker.emqx.io:8084/mqtt';
 
@@ -63,7 +64,7 @@ function publicClaim(rec) {
   const { escrowKey, ...rest } = rec;
   return {
     ...rest,
-    hasEscrow: !!escrowKey,
+    hasEscrow: !!(escrowKey || rest.hasEscrow),
   };
 }
 
@@ -89,16 +90,17 @@ export default async function handler(req, res) {
   if (action === 'create') {
     const claimId = String(body.claimId || '').toLowerCase();
     if (!/^[a-f0-9]{16,64}$/.test(claimId)) return res.status(400).json({ error: 'bad claimId' });
-    if (!body.escrowKey || !body.escrowAddr || !(Number(body.amount) > 0)) {
-      return res.status(400).json({ error: 'missing escrow or amount' });
+    if (!body.escrowAddr || !(Number(body.amount) > 0)) {
+      return res.status(400).json({ error: 'missing escrowAddr or amount' });
     }
+    // Never retain escrowKey on public MQTT — capability lives in share URL #ek=
     const record = {
       event: 'claim_open',
       claimId,
       amount: Number(body.amount),
       netAmount: Number(body.netAmount || body.amount),
       escrowAddr: body.escrowAddr,
-      escrowKey: body.escrowKey,
+      hasEscrow: !!(body.escrowKey || body.hasEscrow || body.escrowAddr),
       from: body.from,
       fromName: body.fromName || '',
       toHint: body.toHint || null,
@@ -113,12 +115,10 @@ export default async function handler(req, res) {
   }
 
   if (action === 'redeem') {
-    // Prefer client-side redeem (has sponsor-tx). Server redeem needs TEMPO_EXECUTOR_PK
-    // and would duplicate sponsor-tx — keep as status helper only unless escrowKey provided
-    // by authorized client. For security, redeem stays client-side via claim.js.
+    // Prefer client-side redeem (has #ek= + sponsor-tx).
     return res.status(400).json({
       error: 'redeem_on_client',
-      hint: 'Use in-app redeemOpenClaim(claimId, address)',
+      hint: 'Use in-app redeemOpenClaim(claimId, address) with share-link #ek=',
     });
   }
 
