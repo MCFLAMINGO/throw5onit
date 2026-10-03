@@ -324,64 +324,48 @@
 </div>
 
 <!-- ═══ SCREEN: MAIN WALLET ══════════════════════════════════════════════════ -->
-<div id="screen-wallet" class="screen">
-  <div class="top-bar">
+<div id="screen-wallet" class="screen screen-wallet-bubbles">
+  <div class="top-bar top-bar-quiet">
     <button class="icon-btn" id="btn-history" aria-label="History">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
     </button>
     <button class="icon-btn" id="btn-pwa-refresh" aria-label="Refresh" title="Refresh app">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
     </button>
-    <button class="self-avatar-btn" id="self-avatar-btn" title="My Profile">
-      <div class="self-avatar-circle" id="self-avatar-circle"><span id="self-avatar-initials">?</span></div>
-    </button>
-    <div class="wallet-handle" id="wallet-handle-display">THROW</div>
+    <div class="wallet-brand" id="wallet-handle-display">THROW</div>
     <div style="display:flex;gap:4px;align-items:center">
     <button class="icon-btn" id="btn-signout" aria-label="Sign out" title="Sign out" style="opacity:0.5">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
     </button>
-    <button class="icon-btn" id="btn-qr-receive" aria-label="Receive">
+    <button class="icon-btn" id="btn-qr-receive" aria-label="Receive QR">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/></svg>
     </button>
     </div>
   </div>
 
-  <!-- Tempo Points badge -->
-  <button id="tempo-points-badge" class="tempo-points-badge">
-    &#x26A1; Earn Tempo Points
-  </button>
+  <!-- Bubble constellation — people first. Load / stack hide behind you. -->
+  <div class="bubble-home" id="bubble-home">
+    <div class="bubble-atmosphere" aria-hidden="true"></div>
+    <p class="bubble-tagline">Tap a friend. Throw cash. Join the night.</p>
 
-  <!-- Crew avatars (known contacts) -->
-  <div class="crew-row" id="crew-row"></div>
+    <div class="bubble-field" id="bubble-field" aria-label="Your people">
+      <!-- People bubbles rendered by renderBubbleHome() -->
+      <button type="button" class="person-bubble self-bubble" id="bubble-self" title="Your pocket">
+        <span class="bubble-face" id="self-avatar-circle"><span id="self-avatar-initials">?</span></span>
+        <span class="bubble-name" id="bubble-self-name">YOU</span>
+        <span class="bubble-meta" id="bubble-self-bal">$0</span>
+      </button>
 
-  <!-- Share my address strip -->
-  <div class="addr-share-strip">
-    <span class="addr-share-text" id="addr-share-display" title="Tap to copy">0x…</span>
-    <button class="addr-share-btn" id="btn-share-my-addr">Share address ↗</button>
+      <button type="button" class="person-bubble join-bubble" id="bubble-join" title="Connect everyone">
+        <span class="bubble-face join-face">+</span>
+        <span class="bubble-name">JOIN</span>
+        <span class="bubble-meta">group</span>
+      </button>
+    </div>
+
+    <!-- Legacy crew-row kept for tests / fallbacks — visually hidden -->
+    <div class="crew-row visually-hidden" id="crew-row" aria-hidden="true"></div>
   </div>
-
-  <!-- Wallet arena: vertical wheel strips flank balance + buttons -->
-  <div class="wallet-arena">
-    <div class="sponsor-strip" id="wallet-strip-left" aria-label="Sponsored">
-      <div class="sponsor-strip-track" id="wallet-track-left"></div>
-    </div>
-    <div class="wallet-arena-center">
-    <div class="balance-section">
-    <div class="balance-label">YOUR STACK <button id="btn-refresh-balance" style="background:none;border:none;cursor:pointer;opacity:0.45;padding:0 0 0 6px;vertical-align:middle;color:inherit" aria-label="Refresh balance"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button></div>
-    <div class="balance-amount" id="balance-display">$0.00</div>
-    <div class="balance-tokens" id="balance-tokens"></div>
-    <div class="cap-bar-wrap">
-      <div class="cap-bar-track"><div class="cap-bar-fill" id="cap-bar-fill"></div></div>
-      <span class="cap-label" id="cap-label">$0 of $50</span>
-    </div>
-    <button type="button" class="load-tonight-btn hidden" id="btn-load-tonight">Load $50 for tonight</button>
-  </div>
-
-    </div><!-- /wallet-arena-center -->
-    <div class="sponsor-strip" id="wallet-strip-right" aria-label="Sponsored">
-      <div class="sponsor-strip-track" id="wallet-track-right"></div>
-    </div>
-  </div><!-- /wallet-arena -->
 
   <!-- Active games stay alive when you leave a screen — tap to return -->
   <div class="session-rail hidden" id="session-rail" aria-live="polite">
@@ -395,50 +379,90 @@
     </button>
   </div>
 
-  <!-- Action grid — THROW + Hold'em (cash-game flagship). IOU stays in contact/profile. -->
-  <div class="action-grid action-grid-throw-holdem">
-    <button class="action-card action-small" id="btn-dock">
-      <div class="action-icon">
-        <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="14" r="6" stroke="white" stroke-width="2.5"/><path d="M8 34c0-6.627 5.373-12 12-12s12 5.373 12 12" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>
-      </div>
-      <span>CREW</span>
+  <!-- Hidden legacy CTAs — still wired; opened from bubbles / group sheet -->
+  <div class="wallet-legacy-actions visually-hidden" aria-hidden="true">
+    <button class="action-card" id="btn-dock">CREW</button>
+    <button class="action-card" id="btn-throw">THROW</button>
+    <button class="action-card" id="btn-open-holdem">HOLD'EM</button>
+    <button type="button" id="btn-open-bet">IOU</button>
+    <button class="load-btn" id="btn-load-cash">LOAD</button>
+    <button type="button" class="load-tonight-btn hidden" id="btn-load-tonight">Load $50</button>
+    <button class="self-avatar-btn" id="self-avatar-btn" title="My Profile">
+      <div class="self-avatar-circle"><span>?</span></div>
     </button>
-    <button class="action-card action-throw-main" id="btn-throw">
-      <div class="action-icon">
-        <svg viewBox="0 0 40 40" fill="none">
-          <line x1="20" y1="34" x2="20" y2="8" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
-          <path d="M11 17 L20 6 L29 17" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        </svg>
-      </div>
-      <span>THROW</span>
-    </button>
-    <button class="action-card action-small action-holdem" id="btn-open-holdem" title="Texas Hold'em — throw cash into the pot">
-      <div class="action-icon">
-        <svg viewBox="0 0 40 40" fill="none">
-          <rect x="8" y="10" width="16" height="22" rx="2" stroke="white" stroke-width="2.2"/>
-          <rect x="16" y="8" width="16" height="22" rx="2" stroke="white" stroke-width="2.2" fill="rgba(0,0,0,0.35)"/>
-          <circle cx="24" cy="19" r="2.2" fill="white"/>
-        </svg>
-      </div>
-      <span>HOLD'EM</span>
-    </button>
+    <span id="addr-share-display"></span>
+    <button id="btn-share-my-addr">Share</button>
+    <button id="tempo-points-badge" class="tempo-points-badge">Points</button>
+    <div id="balance-display">$0.00</div>
+    <div id="balance-tokens"></div>
+    <div id="cap-bar-fill"></div>
+    <span id="cap-label">$0 of $50</span>
+    <div id="wallet-strip-left"><div id="wallet-track-left"></div></div>
+    <div id="wallet-strip-right"><div id="wallet-track-right"></div></div>
   </div>
-  <!-- Parked IOU entry — still reachable for split-the-tab pots -->
-  <button type="button" class="iou-link-quiet" id="btn-open-bet">IOU / split a tab</button>
 
-  <button class="load-btn" id="btn-load-cash">
-    LOAD $50 FOR TONIGHT
-  </button>
-
-  <!-- DEMO MODE — tucked away; also in profile -->
   <button class="demo-mode-btn demo-mode-btn-quiet" id="btn-demo-toggle">
     <span id="demo-mode-btn-label">ENABLE DEMO MODE</span>
     <span class="demo-mode-btn-sub">Test with $50 play money</span>
   </button>
+</div>
 
-  <div class="hot-wallet-notice">
-    <div class="hot-wallet-title">&#x26A0;&#xFE0F; OPEN WALLET — READ THIS</div>
-    <div class="hot-wallet-body">This wallet has no password and no recovery. Your private key is the only backup — tap the QR icon above to see and copy it. Max $50. Treat it like cash: if you lose your phone or clear your browser, the money is gone. Never put more than you'd hand a stranger.</div>
+<!-- Pocket sheet — load / stack / profile (opened from self bubble) -->
+<div id="pocket-sheet" class="sheet-overlay hidden" role="dialog" aria-label="Your pocket">
+  <div class="sheet-card pocket-sheet-card">
+    <button type="button" class="sheet-close" id="pocket-sheet-close" aria-label="Close">×</button>
+    <div class="pocket-sheet-brand">YOUR POCKET</div>
+    <div class="pocket-sheet-bal" id="pocket-sheet-bal">$0.00</div>
+    <div class="pocket-sheet-sub" id="pocket-sheet-sub">Load up to $50 for tonight</div>
+    <button type="button" class="btn-primary" id="btn-pocket-load">Load $50 for tonight</button>
+    <button type="button" class="btn-ghost" id="btn-pocket-profile">Profile &amp; key</button>
+    <p class="pocket-sheet-warn">Hot wallet — treat it like cash in your hand.</p>
+  </div>
+</div>
+
+<!-- Group secondary — Poker / Wager / Party after join -->
+<div id="group-sheet" class="sheet-overlay hidden" role="dialog" aria-label="Group night">
+  <div class="sheet-card group-sheet-card">
+    <button type="button" class="sheet-close" id="group-sheet-close" aria-label="Close">×</button>
+    <div class="group-sheet-brand">TONIGHT</div>
+    <p class="group-sheet-lead">Everyone connected. What are we doing?</p>
+    <div class="group-choice-row">
+      <button type="button" class="group-choice" id="btn-group-poker">
+        <span class="group-choice-title">Poker</span>
+        <span class="group-choice-sub">Hold'em · throw into the pot</span>
+      </button>
+      <button type="button" class="group-choice" id="btn-group-wager">
+        <span class="group-choice-title">Wager</span>
+        <span class="group-choice-sub">IOU · pot · settle later</span>
+      </button>
+      <button type="button" class="group-choice" id="btn-group-party">
+        <span class="group-choice-title">Party</span>
+        <span class="group-choice-sub">Split the night · shared float</span>
+      </button>
+    </div>
+    <div class="group-connect-row">
+      <button type="button" class="btn-ghost" id="btn-group-qr">QR</button>
+      <button type="button" class="btn-ghost" id="btn-group-scan">Scan</button>
+      <button type="button" class="btn-ghost" id="btn-group-nfc">NFC</button>
+      <button type="button" class="btn-ghost" id="btn-group-crew">Crew</button>
+    </div>
+  </div>
+</div>
+
+<!-- Party float sheet — split funds for the night -->
+<div id="party-sheet" class="sheet-overlay hidden" role="dialog" aria-label="Party float">
+  <div class="sheet-card party-sheet-card">
+    <button type="button" class="sheet-close" id="party-sheet-close" aria-label="Close">×</button>
+    <div class="group-sheet-brand">PARTY</div>
+    <p class="group-sheet-lead">One float for pizza, Ubers, the bar. Everyone throws in — settle when it's done.</p>
+    <div class="party-amounts" id="party-amounts">
+      <button type="button" class="qbtn" data-partyamt="5">$5</button>
+      <button type="button" class="qbtn active" data-partyamt="10">$10</button>
+      <button type="button" class="qbtn" data-partyamt="20">$20</button>
+      <button type="button" class="qbtn" data-partyamt="50">$50</button>
+    </div>
+    <button type="button" class="btn-primary" id="btn-party-open">Open the night float</button>
+    <button type="button" class="btn-ghost" id="btn-party-hangout">Open hangout first</button>
   </div>
 </div>
 
