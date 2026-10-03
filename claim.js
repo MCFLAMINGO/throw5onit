@@ -1,23 +1,37 @@
 /* ── THROW CLAIM ENGINE ──────────────────────────────────────────────────
    Throw money at anyone — even if they don't have the app yet.
    Money sits in an escrow pot. Link/SMS/NFC unlocks it into their pocket.
-   Claim record lives on MQTT retained topic throw5/claims/{claimId}.
-   claimId is the capability secret (unguessable).
+   Public claim metadata lives on MQTT retained topic throw5/claims/{claimId}.
+   Escrow private key stays in the share URL fragment (#ek=) — never on MQTT.
    ─────────────────────────────────────────────────────────────────────── */
 
 const CLAIM_TOPIC_PREFIX = 'throw5/claims/';
 const CLAIM_OUTBOX_KEY   = 'throw_claim_outbox';
 const CLAIM_INBOX_KEY    = 'throw_claim_pending_id';
+const CLAIM_EK_KEY       = 'throw_claim_pending_ek';
 
 function claimTopic(id) {
   return CLAIM_TOPIC_PREFIX + id;
 }
 
-function claimPublicUrl(claimId) {
+/** Public MQTT/API body — never includes escrowKey */
+function publicClaimRecord(record) {
+  if (!record) return null;
+  const { escrowKey, ...rest } = record;
+  return { ...rest, hasEscrow: !!(escrowKey || rest.hasEscrow) };
+}
+
+/** Share URL. Live claims put escrow key in #ek= (not sent to servers). */
+function claimPublicUrl(claimId, escrowKey) {
   const origin = (typeof location !== 'undefined' && location.origin)
     ? location.origin
     : 'https://www.throw5onit.com';
-  return origin + '/c/' + claimId;
+  let url = origin + '/c/' + claimId;
+  if (escrowKey && !String(escrowKey).startsWith('demo:')) {
+    const ek = String(escrowKey).replace(/^0x/i, '');
+    url += '#ek=' + ek;
+  }
+  return url;
 }
 
 function generateClaimId() {
@@ -48,17 +62,18 @@ function markOutgoingClaimClaimed(claimId, byAddr) {
   saveClaimOutbox(list);
 }
 
-/** Publish claim record (retained) via MQTT + HTTP relay fallback */
+/** Publish public claim metadata (retained) — escrowKey stripped */
 function publishClaimRecord(record) {
   const topic = claimTopic(record.claimId);
-  const payload = JSON.stringify(record);
+  const pub = publicClaimRecord(record);
+  const payload = JSON.stringify(pub);
 
   // HTTP relay (reliable on flaky mobile networks)
   try {
     fetch('/api/relay', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...record, topic, retain: true, event: 'claim_open' }),
+      body: JSON.stringify({ ...pub, topic, retain: true, event: 'claim_open' }),
     }).catch(() => {});
   } catch(_) {}
 
@@ -171,7 +186,7 @@ async function createOpenClaim(opts) {
     amount,
     netAmount: amount, // face value in pot; fee already paid by thrower on create if using sendStablecoin elsewhere
     escrowAddr,
-    escrowKey, // capability-bound to claimId URL — do not log publicly
+    escrowKey, // kept local + URL #ek= — never published to MQTT
     from: fromAddr,
     fromName: opts.fromName || (typeof getHandle === 'function' ? getHandle() : '') || fromAddr.slice(0, 6),
     toHint: toHint || null,
@@ -183,12 +198,13 @@ async function createOpenClaim(opts) {
   };
 
   publishClaimRecord(record);
+  const url = claimPublicUrl(claimId, escrowKey);
   rememberOutgoingClaim({
     claimId,
     amount,
     toHint: record.toHint,
     fromName: record.fromName,
-    url: claimPublicUrl(claimId),
+    url,
     status: 'open',
     createdAt: record.createdAt,
     escrowAddr,
@@ -196,18 +212,20 @@ async function createOpenClaim(opts) {
 
   return {
     claimId,
-    url: claimPublicUrl(claimId),
+    url,
     amount,
     escrowAddr,
     record,
   };
 }
 
-/** Redeem an open claim into toAddr */
+/** Redeem an open claim into toAddr. Escrow key from URL #ek= (or legacy MQTT). */
 async function redeemOpenClaim(claimId, toAddr) {
   if (!claimId || !toAddr) throw new Error('Missing claim or wallet');
   const rec = await fetchClaimRecord(claimId);
-  if (!rec || !rec.escrowKey) throw new Error('Claim not found or already claimed');
+  if (!rec) throw new Error('Claim not found or already claimed');
+  const escrowKey = readPendingEscrowKey() || rec.escrowKey || null;
+  if (!escrowKey && !rec.demo) throw new Error('Claim key missing — open the full share link');
   if (rec.status && rec.status !== 'open') throw new Error('Claim already ' + rec.status);
   if (rec.expiresAt && Date.now() > rec.expiresAt) throw new Error('Claim expired');
 
@@ -219,7 +237,7 @@ async function redeemOpenClaim(claimId, toAddr) {
     // Allow — user might be testing; still fine
   }
 
-  if (rec.demo || String(rec.escrowKey).startsWith('demo:')) {
+  if (rec.demo || String(escrowKey || '').startsWith('demo:')) {
     if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) {
       state.total = (state.total || 0) + amount;
       state.pathUSD = state.total;
@@ -235,13 +253,14 @@ async function redeemOpenClaim(claimId, toAddr) {
   } else {
     // Live: drain escrow → claimer via sponsor path
     if (typeof _escrowSend !== 'function') throw new Error('Payout engine not ready');
-    const wc = { _escrowPK: rec.escrowKey };
+    const wc = { _escrowPK: escrowKey };
     await _escrowSend(wc, {}, toAddr, amount);
   }
 
   // Clear retained claim so link can't be reused
   clearClaimRecord(claimId);
   markOutgoingClaimClaimed(claimId, toAddr);
+  clearPendingClaimId();
 
   // Notify sender wallet topic
   try {
@@ -266,6 +285,31 @@ async function redeemOpenClaim(claimId, toAddr) {
   return { amount, fromName: rec.fromName, from: rec.from, claimId };
 }
 
+/** Parse escrow key from URL fragment #ek=… */
+function parseEscrowKeyFromLocation(loc) {
+  loc = loc || (typeof location !== 'undefined' ? location : null);
+  if (!loc) return null;
+  try {
+    const hash = String(loc.hash || '').replace(/^#/, '');
+    if (!hash) return null;
+    let ek = null;
+    try {
+      ek = new URLSearchParams(hash).get('ek');
+    } catch(_) {}
+    if (!ek && hash.indexOf('ek=') === 0) {
+      ek = decodeURIComponent(hash.slice(3).split('&')[0]);
+    }
+    if (!ek) return null;
+    ek = String(ek).replace(/\s/g, '');
+    if (/^demo:/i.test(ek)) return ek;
+    if (/^[a-f0-9]{64}$/i.test(ek)) return '0x' + ek.toLowerCase();
+    if (/^0x[a-f0-9]{64}$/i.test(ek)) return ek.toLowerCase();
+    return null;
+  } catch(_) {
+    return null;
+  }
+}
+
 /** Parse claim id from URL path /c/ID or ?claim= */
 function parseClaimIdFromLocation(loc) {
   loc = loc || (typeof location !== 'undefined' ? location : null);
@@ -283,6 +327,11 @@ function parseClaimIdFromLocation(loc) {
 function stashPendingClaimId(claimId) {
   try { sessionStorage.setItem(CLAIM_INBOX_KEY, claimId); } catch(_) {}
   try { localStorage.setItem(CLAIM_INBOX_KEY, claimId); } catch(_) {}
+  const ek = parseEscrowKeyFromLocation();
+  if (ek) {
+    try { sessionStorage.setItem(CLAIM_EK_KEY, ek); } catch(_) {}
+    try { localStorage.setItem(CLAIM_EK_KEY, ek); } catch(_) {}
+  }
 }
 
 function readPendingClaimId() {
@@ -296,14 +345,27 @@ function readPendingClaimId() {
   }
 }
 
+function readPendingEscrowKey() {
+  try {
+    return parseEscrowKeyFromLocation()
+      || sessionStorage.getItem(CLAIM_EK_KEY)
+      || localStorage.getItem(CLAIM_EK_KEY)
+      || null;
+  } catch(_) {
+    return parseEscrowKeyFromLocation();
+  }
+}
+
 function clearPendingClaimId() {
   try { sessionStorage.removeItem(CLAIM_INBOX_KEY); } catch(_) {}
   try { localStorage.removeItem(CLAIM_INBOX_KEY); } catch(_) {}
+  try { sessionStorage.removeItem(CLAIM_EK_KEY); } catch(_) {}
+  try { localStorage.removeItem(CLAIM_EK_KEY); } catch(_) {}
 }
 
 /** Web Share claim link (SMS/iMessage/etc.) */
 async function shareClaimLink(claim, extraText) {
-  const url = claim.url || claimPublicUrl(claim.claimId);
+  const url = claim.url || claimPublicUrl(claim.claimId, claim.escrowKey || readPendingEscrowKey());
   const amount = claim.amount;
   const text = extraText || (`I threw you $${Number(amount).toFixed(2)} on THROW. Tap to put it in your pocket: ${url}`);
   if (navigator.share) {

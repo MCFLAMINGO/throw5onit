@@ -132,6 +132,7 @@ function applyDemoCreditOnce(amount, meta) {
   if (amt <= 0) return false;
   const key = creditDedupeKey(meta || { amount: amt, ts: Date.now() });
   if (!key || !markCreditSeen(key)) return false;
+  // $50 is load size only — receives / bet wins can exceed pocket load
   state.total = Math.round((state.total + amt) * 1e6) / 1e6;
   state.pathUSD = state.total;
   try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
@@ -163,6 +164,7 @@ async function demoSendStablecoin(toAddr, usdAmount) {
   const fee    = getThrowFee(usdAmount);
   const net    = Math.max(0, usdAmount - fee);
   const face   = Math.round(Number(usdAmount) * 1e6) / 1e6;
+  if (!(face > 0)) throw new Error('Invalid amount');
   if (state.total < face) throw new Error('Insufficient demo balance');
 
   // 0.5/0.5 venue split in demo mode too (fee is 0 in demo — no-op)
@@ -1737,11 +1739,16 @@ function renderWalletUI() {
   const tokEl = document.getElementById('balance-tokens');
   if (tokEl) tokEl.textContent = tokenParts.length ? tokenParts.join(' + ') : '0.00 pathUSD';
 
+  // $50 is load pocket size — balance can exceed from throws / bet wins
   const pct = Math.min((total / CAP_USD) * 100, 100);
   const fill = document.getElementById('cap-bar-fill');
   if (fill) fill.style.width = pct + '%';
   const capLabel = document.getElementById('cap-label');
-  if (capLabel) capLabel.textContent = `$${total.toFixed(0)} of $${CAP_USD}`;
+  if (capLabel) {
+    capLabel.textContent = total > CAP_USD
+      ? `$${total.toFixed(0)} in pocket`
+      : `$${total.toFixed(0)} of $${CAP_USD}`;
+  }
 
   // Always keep THROW enabled — balance may be loading
   const throwBtn = document.getElementById('btn-throw');
@@ -1769,10 +1776,13 @@ function renderWalletUI() {
 async function sendStablecoin(toAddr, usdAmount) {
   if (DEMO_MODE) return demoSendStablecoin(toAddr, usdAmount);
 
+  const face = Math.round(Number(usdAmount) * 1e6) / 1e6;
+  if (!(face > 0)) throw new Error('Invalid amount');
+
   // 1% fee total. If at a venue: 0.5% to treasury + 0.5% accrues to venue.
   // If no venue: 1% to treasury.
-  const fee = getThrowFee(usdAmount);       // always 1%
-  const netAmount = Math.max(0, usdAmount - fee);
+  const fee = getThrowFee(face);
+  const netAmount = Math.max(0, face - fee);
 
   const isAtVenue = !!(_activeSponsor?.isVenue && _activeSponsor?.venueId);
   const treasuryFee = isAtVenue
@@ -1788,7 +1798,7 @@ async function sendStablecoin(toAddr, usdAmount) {
   }
 
   // Accrue venue's cut locally — paid out monthly in batch from dashboard
-  if (venueFee > 0) accrueVenueFee(_activeSponsor.venueId, _activeSponsor.name, venueFee, usdAmount);
+  if (venueFee > 0) accrueVenueFee(_activeSponsor.venueId, _activeSponsor.name, venueFee, face);
 
   // Choose token for net payment: prefer USDC.e, then pathUSD — both 6 decimals
   let tokenAddr, decimals = 6;
@@ -1819,25 +1829,26 @@ async function sendStablecoin(toAddr, usdAmount) {
 // Poker rake / bet fees are taken at settlement from the pot, not on each throw-in.
 async function sendEscrowDeposit(escrowAddr, usdAmount) {
   if (!escrowAddr) throw new Error('Escrow address missing');
-  if (!(usdAmount > 0)) return null;
+  const face = Math.round(Number(usdAmount) * 1e6) / 1e6;
+  if (!(face > 0)) return null;
   if (DEMO_MODE) {
-    if (state.total < usdAmount) throw new Error('Insufficient demo balance');
-    state.total   = Math.max(0, state.total - usdAmount);
+    if (state.total < face) throw new Error('Insufficient demo balance');
+    state.total   = Math.max(0, state.total - face);
     state.pathUSD = state.total;
     try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
     renderWalletUI();
     return '0xESCROW' + Math.random().toString(16).slice(2, 12).toUpperCase();
   }
   let tokenAddr;
-  if (state.usdc >= usdAmount) {
+  if (state.usdc >= face) {
     tokenAddr = USDC_ADDR;
-  } else if (state.pathUSD >= usdAmount) {
+  } else if (state.pathUSD >= face) {
     tokenAddr = PATHUSD_ADDR;
-  } else if ((state.pathUSD + state.usdc) >= usdAmount) {
+  } else if ((state.pathUSD + state.usdc) >= face) {
     if (state.usdc > 0.001) {
       const usdcPart = state.usdc;
       await _sendToken(USDC_ADDR, 6, escrowAddr, usdcPart);
-      const remainder = Math.round((usdAmount - usdcPart) * 1e6) / 1e6;
+      const remainder = Math.round((face - usdcPart) * 1e6) / 1e6;
       if (remainder > 0.001) await _sendToken(PATHUSD_ADDR, 6, escrowAddr, remainder);
       return;
     }
@@ -1845,7 +1856,7 @@ async function sendEscrowDeposit(escrowAddr, usdAmount) {
   } else {
     throw new Error('Insufficient balance');
   }
-  return await _sendToken(tokenAddr, 6, escrowAddr, usdAmount);
+  return await _sendToken(tokenAddr, 6, escrowAddr, face);
 }
 
 // Accrue venue fee locally — aggregated by venueId, paid out monthly from Swarm dashboard
@@ -1875,22 +1886,27 @@ function accrueVenueFee(venueId, venueName, feeAmount, throwAmount) {
 
 async function _sendToken(tokenAddr, decimals, toAddr, usdAmount) {
   const { ethers } = await getViem();
+  const pk = state.account?.privateKey || _storedPK || null;
+  if (!pk) throw new Error('Wallet key missing — reopen wallet');
+
+  const face = Math.round(Number(usdAmount) * 1e6) / 1e6;
+  if (!(face > 0)) throw new Error('Invalid amount');
 
   const provider = new ethers.JsonRpcProvider(TEMPO_RPC);
-  const signer   = new ethers.Wallet(state.privateKey, provider);
+  const signer   = new ethers.Wallet(pk, provider);
   const token    = new ethers.Contract(tokenAddr, [
     'function transfer(address to, uint256 amount) returns (bool)',
   ], signer);
 
   const dp     = decimals > 6 ? 6 : decimals;
-  const amount = ethers.parseUnits(usdAmount.toFixed(dp), dp);
+  const amount = ethers.parseUnits(face.toFixed(dp), dp);
 
   const tx      = await token.transfer(toAddr, amount);
   const receipt = await tx.wait();
   const hash    = receipt.hash;
 
   // Log history
-  state.txHistory.unshift({ type: 'sent', amount: usdAmount, to: toAddr, hash, ts: Date.now() });
+  state.txHistory.unshift({ type: 'sent', amount: face, to: toAddr, hash, ts: Date.now() });
   await refreshBalances();
   return hash;
 }
@@ -4279,12 +4295,13 @@ async function executeThrowToAnyone() {
       toHint: hint || null,
       memo: 'THROW claim',
     });
-    // Backup publish via API
+    // Backup publish via API — public metadata only (no escrowKey)
     try {
+      const { escrowKey: _ek, ...pub } = claim.record || {};
       fetch('/api/claim', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create', ...claim.record }),
+        body: JSON.stringify({ action: 'create', ...pub, hasEscrow: true }),
       }).catch(() => {});
     } catch(_) {}
     hideTxFlash();
@@ -5068,6 +5085,7 @@ function fundChipText(total, cap) {
   const c = Number(cap) || CAP_USD;
   const room = Math.max(0, c - t);
   if (t < 0.01) return 'Empty pocket — load up to $' + c;
+  if (t > c) return '$' + t.toFixed(2) + ' in pocket — throws & wins stack';
   if (t >= 1) return 'Loaded $' + t.toFixed(2) + ' — ready to throw';
   return 'On you now: $' + t.toFixed(2) + ' · room for $' + room.toFixed(2);
 }
@@ -5130,7 +5148,7 @@ function openAddCashScreen() {
 }
 
 function buildAskFriendLoadText(name, url) {
-  return 'Hey — can you load me on THROW? Cap is $50 for tonight. I\'m ' + (name || 'here') + '. ' + url;
+  return 'Hey — can you load me on THROW? Pocket load is $50 for tonight. I\'m ' + (name || 'here') + '. ' + url;
 }
 
 function updateSmsFriendLink() {
@@ -5304,7 +5322,7 @@ let _bootKillTimer = setTimeout(hideBootLoader, 10000);
 
 document.addEventListener('DOMContentLoaded', async () => {
 
-  // Claim deep link /c/ID or ?claim= — stash before routing so catch works after wallet create
+  // Claim deep link /c/ID#ek=… or ?claim= — stash id + key before routing
   try {
     const earlyClaim = parseClaimIdFromLocation();
     if (earlyClaim) stashPendingClaimId(earlyClaim);

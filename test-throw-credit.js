@@ -98,5 +98,14 @@ console.log('6) Dedupe prefers throwId over hash');
   assert(creditDedupeKey({ hash: '0xAb' }) === 'h:0xab', 'hash fallback');
 }
 
+console.log('7) Receives can exceed $50 pocket load');
+{
+  const events = [
+    { event: 'demo_credit', amount: 40, throwId: 'big1', hash: '0xb1', from: '0xA', ts: 1 },
+    { event: 'demo_credit', amount: 30, throwId: 'big2', hash: '0xb2', from: '0xB', ts: 2 },
+  ];
+  assert(simulateCredits(events) === 120, '50 + 40 + 30 = 120 — not clamped to 50');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
