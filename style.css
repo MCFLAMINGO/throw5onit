@@ -606,10 +606,57 @@ h1 { font-size: 18px; font-weight: 700; }
 }
 .throw-legacy-stubs { display: none !important; }
 
-/* Wallet: THROW-first grid — park IOU off the primary path */
-.action-grid-throw-only .action-parked {
+/* Wallet: THROW + Hold'em flagship — IOU quiet text link */
+.action-grid-throw-only .action-parked,
+.action-grid-throw-holdem .action-parked {
   opacity: 0.28;
   transform: scale(0.92);
+}
+.action-card.action-holdem {
+  background: linear-gradient(160deg, rgba(34, 120, 72, 0.55), rgba(12, 40, 28, 0.9));
+  border: 1px solid rgba(90, 220, 140, 0.35);
+}
+.action-card.action-holdem:active { transform: scale(0.96); }
+.iou-link-quiet {
+  display: block;
+  width: 100%;
+  margin: 6px 0 2px;
+  padding: 6px;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.35);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.iou-link-quiet:active { color: rgba(255,255,255,0.55); }
+.poker-hero-line {
+  margin: -2px 0 10px;
+  font-size: 15px;
+  line-height: 1.35;
+  color: rgba(255,255,255,0.78);
+  text-align: center;
+}
+.poker-raise-row {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 4px 2px 10px;
+  width: 100%;
+}
+.poker-raise-row .poker-raise-chip {
+  flex: 1 1 auto;
+  min-width: 64px;
+  max-width: 96px;
+}
+.poker-next-hand-btn {
+  margin-top: 10px;
+  width: 100%;
+  background: linear-gradient(160deg, #2ecc71, #1a8f4a) !important;
 }
 .demo-mode-btn-quiet {
   opacity: 0.4;

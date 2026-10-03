@@ -5413,6 +5413,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   /* ── Wallet screen ── */
   document.getElementById('btn-throw').onclick  = openThrowScreen;
 
+  const holdemBtn = document.getElementById('btn-open-holdem');
+  if (holdemBtn) holdemBtn.onclick = () => {
+    if (!state.account) return;
+    openPokerSetup().catch(e => {
+      console.error('openPokerSetup failed', e);
+      showError('Could not open table: ' + (e.message || e));
+    });
+  };
   document.getElementById('btn-open-bet').onclick = () => {
     if (!state.account) return;
     openBetSetup();
@@ -5611,6 +5619,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (pokerAdv) pokerAdv.onclick = onPokerAdvanceClick;
   const pokerPayout = document.getElementById('btn-poker-payout');
   if (pokerPayout) pokerPayout.onclick = onPokerPayoutClick;
+  const pokerNext = document.getElementById('btn-poker-next-hand');
+  if (pokerNext) pokerNext.onclick = () => {
+    pokerNextHand().catch(e => showError('Next hand failed: ' + (e.message || e)));
+  };
   const pokerJoinSelf = document.getElementById('poker-join-self');
   if (pokerJoinSelf) pokerJoinSelf.onchange = () => renderPokerSetup();
   loadPokerTablePrefs();
@@ -6476,7 +6488,7 @@ async function openPokerSetup() {
   try { unlockPokerVoice(); } catch(_) {}
   loadPokerTablePrefs();
   const codeEl = document.getElementById('poker-setup-code');
-  if (codeEl) codeEl.textContent = 'Table ' + roomCode + ' — seat crew, then Deal';
+  if (codeEl) codeEl.textContent = 'Table ' + roomCode + ' — THROW to join, then Deal';
   renderPokerSetup();
   enterRoom(roomCode, {}).catch(() => {});
   _subscribePokerTopic(roomCode);
@@ -7008,18 +7020,12 @@ async function pokerSettle(winnerAddr) {
   const winner = p.seats.find(s => s.addr.toLowerCase() === winnerAddr.toLowerCase());
   if (!winner) return;
 
-  _publishPoker({
-    event: 'poker_settle',
-    winnerAddr: winner.addr,
-    winnerName: winner.name,
-    pot: p.pot,
-    ts: Date.now(),
-  });
+  const potWon = Number(p.pot) || 0;
 
   if (DEMO_MODE) {
     const myLc = (p.myAddr || '').toLowerCase();
     if (winner.addr.toLowerCase() === myLc) {
-      state.total = (state.total || 0) + p.pot;
+      state.total = (state.total || 0) + potWon;
       state.pathUSD = state.total;
       try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
       renderWalletUI();
@@ -7027,14 +7033,14 @@ async function pokerSettle(winnerAddr) {
       // Remote winner — credit via MQTT (don't also credit locally)
       try {
         const fakeHash = '0xPOKER' + Math.random().toString(16).slice(2, 12).toUpperCase();
-        _demoCreditGlobal(winner.addr, p.pot, fakeHash);
+        _demoCreditGlobal(winner.addr, potWon, fakeHash);
       } catch(_) {}
     }
   } else {
     const escrowPK = state.bet.escrowKey;
     if (escrowPK) {
-      const fee = parseFloat((p.pot * 0.03).toFixed(6));
-      const payout = parseFloat((p.pot - fee).toFixed(6));
+      const fee = parseFloat((potWon * 0.03).toFixed(6));
+      const payout = parseFloat((potWon - fee).toFixed(6));
       const wc = { _escrowPK: escrowPK };
       const pc = {};
       try {
@@ -7050,12 +7056,85 @@ async function pokerSettle(winnerAddr) {
   }
 
   p.street = 'settled';
+  // Table chips: winner stacks the pot for the next hand; cash already hit their pocket
+  winner.stack = Math.round(((winner.stack || 0) + potWon) * 1e6) / 1e6;
+  p.pot = 0;
+  p.currentBet = 0;
+  p.lastRaiser = null;
+  p.seats.forEach(s => { s.bet = 0; s.folded = false; s.acted = false; });
+
+  _publishPoker({
+    event: 'poker_settle',
+    winnerAddr: winner.addr,
+    winnerName: winner.name,
+    pot: potWon,
+    seats: p.seats,
+    street: 'settled',
+    ts: Date.now(),
+  });
+
   moneyRain(8);
-  const winLine = pokerSeatName(winner) + ' wins ' + pokerMoneySpeak(p.pot) + '.';
+  const winLine = pokerSeatName(winner) + ' wins ' + pokerMoneySpeak(potWon) + '.';
   setPokerAnnounce(winLine, true);
-  showTxFlash('🏆', '$' + p.pot, (winner.name || 'Winner') + ' wins!');
+  showTxFlash('🏆', '$' + potWon, (winner.name || 'Winner') + ' wins!');
   renderPokerTable();
-  try { localStorage.removeItem('throw_active_bet'); } catch(_) {}
+  try { persistPokerSession(); } catch(_) {}
+}
+
+/** Host deals again with remaining stacks — same seats, rotated dealer. */
+async function pokerNextHand() {
+  const p = state.poker;
+  if (!p || !p.isHost) return;
+  if (p.street !== 'settled' && p.street !== 'waiting') {
+    showToast('Finish this hand first');
+    return;
+  }
+  let seats = (p.seats || [])
+    .filter(s => (Number(s.stack) || 0) >= POKER_BB)
+    .map(s => ({
+      addr: s.addr,
+      name: s.name,
+      role: 'player',
+      stack: Number(s.stack) || 0,
+      bet: 0,
+      folded: false,
+      acted: false,
+    }));
+  if (seats.length < 2) {
+    showToast('Need 2+ stacks with cash to deal again');
+    return;
+  }
+  // Rotate so next hand has a new dealer (index 0)
+  const rotate = ((p.dealerIdx || 0) + 1) % seats.length;
+  seats = seats.slice(rotate).concat(seats.slice(0, rotate));
+  p.seats = seats;
+  p._selectedRaise = null;
+  _pokerSelectedWinnerAddr = null;
+  _pokerSeenActionKeys = new Set();
+
+  // Fresh escrow for live pots so leftover rake dust doesn't confuse payouts
+  if (!DEMO_MODE) {
+    try {
+      const { ethers } = await getViem();
+      const w = ethers.Wallet.createRandom();
+      state.bet.escrowKey = w.privateKey;
+      state.bet.escrowAddr = w.address;
+      state.bet.active = true;
+      state.bet.structure = 'texas-holdem';
+      p.escrowAddr = w.address;
+    } catch (e) {
+      showError('Could not open next pot: ' + (e.message || e));
+      return;
+    }
+  }
+
+  const nextBtn = document.getElementById('btn-poker-next-hand');
+  if (nextBtn) { nextBtn.disabled = true; nextBtn.textContent = 'Dealing…'; }
+  try {
+    await startPokerGame(seats, p.roomCode);
+  } finally {
+    if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = 'Next hand'; }
+  }
 }
 
 function renderPokerTable() {
@@ -7142,17 +7221,42 @@ function renderPokerTable() {
 
         if (raiseRow) {
           raiseRow.style.display = 'flex';
-          const minRaiseTo = (p.currentBet || 0) + 1;
-          raiseRow.querySelectorAll('.poker-raise-chip').forEach(chip => {
-            const amt     = parseInt(chip.dataset.raiseamt, 10);
-            const visible = amt >= minRaiseTo && amt <= myStack + myBet;
-            chip.style.display = visible ? '' : 'none';
-            chip.classList.remove('active');
+          raiseRow.innerHTML = '';
+          const minRaiseTo = Math.min(myStack + myBet, (p.currentBet || 0) + POKER_BB);
+          const maxTo = myStack + myBet;
+          const cur = p.currentBet || 0;
+          const pot = p.pot || 0;
+          const candidates = [
+            { label: '+$' + POKER_BB, to: cur + POKER_BB },
+            { label: '+$' + (POKER_BB * 2), to: cur + POKER_BB * 2 },
+            { label: '½ pot', to: cur + Math.max(POKER_BB, Math.floor(pot / 2)) },
+            { label: 'Pot', to: cur + Math.max(POKER_BB, pot) },
+          ];
+          const seen = new Set();
+          const chips = [];
+          for (const c of candidates) {
+            const to = Math.round(Math.min(maxTo, Math.max(minRaiseTo, c.to)));
+            if (to < minRaiseTo || to > maxTo) continue;
+            if (seen.has(to)) continue;
+            seen.add(to);
+            chips.push({ label: c.label, to });
+          }
+          if (!seen.has(maxTo) && maxTo >= minRaiseTo && myStack > 0) {
+            chips.push({ label: 'All-in', to: maxTo });
+          }
+          if (!p._selectedRaise && chips[0]) p._selectedRaise = chips[0].to;
+          chips.forEach(c => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'qbtn poker-raise-chip' + (p._selectedRaise === c.to ? ' active' : '');
+            chip.textContent = c.label;
+            chip.dataset.raiseamt = String(c.to);
             chip.onclick = () => {
-              raiseRow.querySelectorAll('.poker-raise-chip').forEach(c => c.classList.remove('active'));
+              p._selectedRaise = c.to;
+              raiseRow.querySelectorAll('.poker-raise-chip').forEach(el => el.classList.remove('active'));
               chip.classList.add('active');
-              p._selectedRaise = amt;
             };
+            raiseRow.appendChild(chip);
           });
         }
 
@@ -7194,9 +7298,25 @@ function renderPokerTable() {
   }
 
   const showdownCtl = document.getElementById('poker-showdown-controls');
+  const payoutBtn = document.getElementById('btn-poker-payout');
+  const nextBtn = document.getElementById('btn-poker-next-hand');
+  const hintEl = document.getElementById('poker-showdown-hint');
   if (showdownCtl) {
     const isShowdown = p.street === 'showdown' && p.isHost;
-    showdownCtl.style.display = isShowdown ? '' : 'none';
+    const isSettled = p.street === 'settled' && p.isHost;
+    showdownCtl.style.display = (isShowdown || isSettled) ? '' : 'none';
+    if (payoutBtn) {
+      payoutBtn.classList.toggle('hidden', !!isSettled);
+      if (isShowdown) payoutBtn.disabled = !_pokerSelectedWinnerAddr;
+    }
+    if (nextBtn) {
+      nextBtn.classList.toggle('hidden', !isSettled);
+    }
+    if (hintEl) {
+      hintEl.textContent = isSettled
+        ? 'Pot paid — deal again with the same crew?'
+        : 'Tap the winner — pot rains into their pocket (can exceed $50).';
+    }
   }
 }
 
@@ -7408,15 +7528,18 @@ function _handlePokerMessage(data, opts) {
   if (data.event === 'poker_settle') {
     if (!opts.local && p.isHost) {
       // Host already handled payout locally
-      p.street = 'settled';
-      renderPokerTable();
       return;
     }
     p.street = 'settled';
+    if (data.seats) p.seats = data.seats;
+    p.pot = 0;
+    p.currentBet = 0;
     // Money for remote winners arrives via demo_credit / on-chain escrow — don't double-credit here
     showTxFlash('🏆', '$' + (data.pot || 0), (data.winnerName || 'Winner') + ' wins!');
     moneyRain(6);
+    setPokerAnnounce((data.winnerName || 'Winner') + ' wins ' + pokerMoneySpeak(data.pot || 0) + '.', true);
     renderPokerTable();
+    try { persistPokerSession(); } catch(_) {}
     return;
   }
 }

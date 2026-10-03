@@ -36,7 +36,8 @@ console.log('2) IOU is first-class (default + settle)');
   assert(app.includes("structure = 'iou'") || app.includes("structure:  'iou'"), 'IOU is default structure');
   assert(app.includes("structure === 'iou'") && app.includes('winner-all'), 'IOU settles with winner-all path');
   assert(app.includes('THEY PAID') && app.includes('FORGIVE'), 'IOU settle button labels');
-  assert(html.includes('IOU') && (html.includes('btn-open-bet') || html.includes('>IOU<')), 'Wallet CTA labeled IOU');
+  assert(html.includes('btn-open-holdem') || html.includes("HOLD'EM"), 'Wallet CTA labeled HOLD\'EM');
+  assert(html.includes('btn-open-bet') && html.includes('IOU'), 'IOU still reachable as quiet link');
 }
 
 console.log('3) Photo → wallet theme colors');
