@@ -51,12 +51,12 @@ assert(/\.screen\s*>\s*\.back-btn\s*\{[\s\S]*?position:\s*fixed/.test(css), 'bac
 assert(css.includes('demo-banner:not(.hidden)') && css.includes('.screen > .back-btn'), 'back below demo banner');
 
 console.log('7) Hold\'em flagship — wallet entry + next hand + compact raises');
-assert(html.includes('id="btn-open-holdem"'), 'wallet Hold\'em CTA');
-assert(html.includes('action-holdem') || css.includes('action-holdem'), 'holdem action styling');
+assert(html.includes('id="btn-open-holdem"') || html.includes('id="btn-group-poker"'), 'Hold\'em CTA');
+assert(html.includes('action-holdem') || css.includes('action-holdem') || html.includes('btn-group-poker'), 'holdem entry styling');
 assert(html.includes('poker-hero-line') || html.includes('Throw cash into the pot'), 'beer-money setup copy');
 assert(html.includes('id="btn-poker-next-hand"'), 'next hand button');
 assert(app.includes('function pokerNextHand') || app.includes('async function pokerNextHand'), 'pokerNextHand');
-assert(app.includes("btn-open-holdem"), 'holdem button wired');
+assert(app.includes('btn-open-holdem') || app.includes('btn-group-poker'), 'holdem button wired');
 assert(app.includes('½ pot') || app.includes('1/2 pot') || app.includes('half'), 'compact raise has half-pot');
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

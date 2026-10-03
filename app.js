@@ -1768,6 +1768,12 @@ function renderWalletUI() {
     }
   }
   updateFundBalanceChip();
+  const bubbleBal = document.getElementById('bubble-self-bal');
+  if (bubbleBal) bubbleBal.textContent = '$' + total.toFixed(0);
+  const pocketBal = document.getElementById('pocket-sheet-bal');
+  if (pocketBal && !document.getElementById('pocket-sheet')?.classList.contains('hidden')) {
+    pocketBal.textContent = '$' + total.toFixed(2);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -4599,8 +4605,15 @@ function upsertContact(name, addr, extra) {
   };
   if (idx >= 0) {
     // Merge — preserve existing photo/phone unless new one provided
-    contacts[idx] = { ...contacts[idx], ...entry };
+    const prev = contacts[idx];
+    contacts[idx] = {
+      ...prev,
+      ...entry,
+      throwCount: Number(prev.throwCount || 0) + (extra && extra.bumpThrow ? 1 : 0),
+    };
+    if (extra && extra.bumpThrow) contacts[idx].lastThrow = Date.now();
   } else {
+    entry.throwCount = (extra && extra.bumpThrow) ? 1 : (Number(extra?.throwCount) || 0);
     contacts.unshift(entry);
   }
   saveContacts(contacts.slice(0, 20));
@@ -4609,26 +4622,246 @@ function upsertContact(name, addr, extra) {
 function touchContact(addr) {
   const contacts = getContacts();
   const idx = contacts.findIndex(c => c.addr.toLowerCase() === addr.toLowerCase());
-  if (idx >= 0) { contacts[idx].lastThrow = Date.now(); saveContacts(contacts); renderCrew(); }
+  if (idx >= 0) {
+    contacts[idx].lastThrow = Date.now();
+    contacts[idx].throwCount = Number(contacts[idx].throwCount || 0) + 1;
+    saveContacts(contacts);
+    renderCrew();
+  }
 }
 
-/* ─ Crew row render ─ */
-function renderCrew() {
-  const row = document.getElementById('crew-row');
-  if (!row) return;
-  const contacts = getContacts();
-  if (!contacts.length) { row.innerHTML = ''; return; }
-  row.innerHTML = contacts.slice(0, 8).map(c => {
-    const initials = c.name.slice(0,2);
+/* ─ Bubble home + legacy crew row ─ */
+function contactBubbleSize(c) {
+  const count = Number(c.throwCount || 0);
+  // More throws → bigger bubble (48 → 92)
+  const t = Math.min(1, Math.log2(1 + count) / Math.log2(1 + 24));
+  return Math.round(48 + t * 44);
+}
+
+function bubbleOrbitSlots(n) {
+  // Positions around center JOIN (percent of field)
+  const slots = [
+    { x: 22, y: 30 }, { x: 78, y: 28 }, { x: 14, y: 52 }, { x: 86, y: 54 },
+    { x: 28, y: 72 }, { x: 72, y: 74 }, { x: 50, y: 22 }, { x: 50, y: 68 },
+  ];
+  return slots.slice(0, Math.max(n, 0));
+}
+
+function renderBubbleHome() {
+  const field = document.getElementById('bubble-field');
+  if (!field) return;
+
+  // Keep self + join nodes; wipe person bubbles
+  field.querySelectorAll('.person-bubble.contact-bubble, .person-bubble.empty-hint').forEach(el => el.remove());
+
+  const contacts = getContacts()
+    .slice()
+    .sort((a, b) => Number(b.throwCount || 0) - Number(a.throwCount || 0) || (b.lastThrow || 0) - (a.lastThrow || 0))
+    .slice(0, 8);
+
+  // Self bubble face / balance
+  const selfBtn = document.getElementById('bubble-self');
+  const selfName = document.getElementById('bubble-self-name');
+  const selfBal = document.getElementById('bubble-self-bal');
+  const profile = getSelfProfile();
+  if (selfName) selfName.textContent = (profile.name || getHandle() || 'YOU').slice(0, 8);
+  if (selfBal) selfBal.textContent = '$' + (Number(state.total) || 0).toFixed(0);
+  try { updateSelfAvatar(); } catch(_) {}
+
+  if (!contacts.length) {
+    const hint = document.createElement('div');
+    hint.className = 'person-bubble empty-hint';
+    hint.innerHTML = '<span class="bubble-face">+</span><span class="bubble-name">Tap JOIN</span><span class="bubble-meta">connect friends</span>';
+    field.appendChild(hint);
+    return;
+  }
+
+  const slots = bubbleOrbitSlots(contacts.length);
+  contacts.forEach((c, i) => {
+    const slot = slots[i] || { x: 50, y: 30 };
+    const size = contactBubbleSize(c);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'person-bubble contact-bubble';
+    btn.style.left = slot.x + '%';
+    btn.style.top = slot.y + '%';
+    btn.style.width = size + 'px';
+    btn.dataset.addr = c.addr;
+    btn.dataset.name = c.name || '';
     const color = addrToColor(c.addr);
-    return `<button class="crew-avatar" data-addr="${c.addr}" data-name="${c.name}" title="${c.name}" style="background:${color}">${initials}</button>`;
-  }).join('');
-  row.querySelectorAll('.crew-avatar').forEach(btn => {
-    btn.onclick = () => openContactOverlay(btn.dataset.name, btn.dataset.addr);
+    const initials = (c.name || c.addr.slice(2, 4)).slice(0, 2).toUpperCase();
+    const face = c.photo
+      ? '<img src="' + c.photo + '" alt="">'
+      : initials;
+    const meta = Number(c.throwCount || 0) > 0 ? (c.throwCount + '×') : 'tap';
+    btn.innerHTML =
+      '<span class="bubble-face" style="background:' + color + '">' + face + '</span>' +
+      '<span class="bubble-name">' + (c.name || initials) + '</span>' +
+      '<span class="bubble-meta">' + meta + '</span>';
+    btn.onclick = () => openThrowFromBubble(c.name, c.addr);
+    field.appendChild(btn);
   });
 }
+
+function openThrowFromBubble(name, addr) {
+  if (!addr) return;
+  // Amount → aim → swipe on throw screen (engines unchanged)
+  openThrowScreen({ name: name || addr.slice(0, 6), addr });
+}
+
+function openPocketSheet() {
+  const sheet = document.getElementById('pocket-sheet');
+  if (!sheet) return;
+  const bal = document.getElementById('pocket-sheet-bal');
+  const sub = document.getElementById('pocket-sheet-sub');
+  const total = Number(state.total) || 0;
+  if (bal) bal.textContent = '$' + total.toFixed(2);
+  if (sub) {
+    sub.textContent = total > CAP_USD
+      ? '$' + total.toFixed(0) + ' in pocket — throws & wins stack'
+      : 'Load up to $' + CAP_USD + ' for tonight';
+  }
+  sheet.classList.remove('hidden');
+}
+
+function closePocketSheet() {
+  document.getElementById('pocket-sheet')?.classList.add('hidden');
+}
+
+function openGroupSheet() {
+  document.getElementById('group-sheet')?.classList.remove('hidden');
+}
+
+function closeGroupSheet() {
+  document.getElementById('group-sheet')?.classList.add('hidden');
+}
+
+function openPartySheet() {
+  closeGroupSheet();
+  document.getElementById('party-sheet')?.classList.remove('hidden');
+  state._partyAmt = state._partyAmt || 10;
+  document.querySelectorAll('[data-partyamt]').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.partyamt, 10) === state._partyAmt);
+    b.onclick = () => {
+      state._partyAmt = parseInt(b.dataset.partyamt, 10);
+      document.querySelectorAll('[data-partyamt]').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+    };
+  });
+}
+
+function closePartySheet() {
+  document.getElementById('party-sheet')?.classList.add('hidden');
+}
+
+function openPartyFloat() {
+  closePartySheet();
+  // Party = IOU / split-the-tab pot for the night
+  state.bet.structure = 'iou';
+  state.bet.amountPer = state._partyAmt || 10;
+  openBetSetup();
+  const desc = document.getElementById('bet-description');
+  if (desc && !desc.value) desc.value = 'Night float';
+  document.querySelectorAll('[data-struct]').forEach(c => {
+    c.classList.toggle('active', c.dataset.struct === 'iou');
+  });
+  document.querySelectorAll('[data-betamt]').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.betamt, 10) === state.bet.amountPer);
+  });
+  const startBtn = document.getElementById('btn-start-pot');
+  if (startBtn) startBtn.textContent = 'Open the night float';
+}
+
+function wireBubbleHome() {
+  const join = document.getElementById('bubble-join');
+  if (join && !join._wired) {
+    join._wired = true;
+    join.onclick = () => openGroupSheet();
+  }
+  const self = document.getElementById('bubble-self');
+  if (self && !self._wired) {
+    self._wired = true;
+    self.onclick = () => openPocketSheet();
+  }
+  document.getElementById('pocket-sheet-close')?.addEventListener('click', closePocketSheet);
+  document.getElementById('pocket-sheet')?.addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'pocket-sheet') closePocketSheet();
+  });
+  document.getElementById('btn-pocket-load')?.addEventListener('click', () => {
+    closePocketSheet();
+    openAddCashScreen();
+  });
+  document.getElementById('btn-pocket-profile')?.addEventListener('click', () => {
+    closePocketSheet();
+    document.getElementById('self-avatar-btn')?.click();
+  });
+
+  document.getElementById('group-sheet-close')?.addEventListener('click', closeGroupSheet);
+  document.getElementById('group-sheet')?.addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'group-sheet') closeGroupSheet();
+  });
+  document.getElementById('btn-group-poker')?.addEventListener('click', () => {
+    closeGroupSheet();
+    openPokerSetup().catch(e => showError(e.message || 'Could not open table'));
+  });
+  document.getElementById('btn-group-wager')?.addEventListener('click', () => {
+    closeGroupSheet();
+    openBetSetup();
+  });
+  document.getElementById('btn-group-party')?.addEventListener('click', () => openPartySheet());
+  document.getElementById('btn-group-qr')?.addEventListener('click', async () => {
+    closeGroupSheet();
+    try { await startHangoutHost(); } catch (e) { openDockScreen(); showToast(e.message || 'Hangout'); }
+  });
+  document.getElementById('btn-group-scan')?.addEventListener('click', () => {
+    closeGroupSheet();
+    openDockScreen();
+    setTimeout(() => { try { startHangoutScan(); } catch(_) {} }, 200);
+  });
+  document.getElementById('btn-group-nfc')?.addEventListener('click', async () => {
+    closeGroupSheet();
+    try {
+      if (!('NDEFReader' in window)) { showToast('NFC not on this phone — use QR'); openDockScreen(); return; }
+      showToast('Hold phones together…');
+      await startHangoutHost();
+    } catch (e) { showToast(e.message || 'NFC unavailable'); openDockScreen(); }
+  });
+  document.getElementById('btn-group-crew')?.addEventListener('click', () => {
+    closeGroupSheet();
+    openDockScreen();
+  });
+
+  document.getElementById('party-sheet-close')?.addEventListener('click', closePartySheet);
+  document.getElementById('party-sheet')?.addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'party-sheet') closePartySheet();
+  });
+  document.getElementById('btn-party-open')?.addEventListener('click', openPartyFloat);
+  document.getElementById('btn-party-hangout')?.addEventListener('click', async () => {
+    closePartySheet();
+    try { await startHangoutHost(); } catch (_) { openDockScreen(); }
+  });
+}
+
+function renderCrew() {
+  const row = document.getElementById('crew-row');
+  if (row) {
+    const contacts = getContacts();
+    if (!contacts.length) { row.innerHTML = ''; }
+    else {
+      row.innerHTML = contacts.slice(0, 8).map(c => {
+        const initials = (c.name || '??').slice(0, 2);
+        const color = addrToColor(c.addr);
+        return `<button class="crew-avatar" data-addr="${c.addr}" data-name="${c.name}" title="${c.name}" style="background:${color}">${initials}</button>`;
+      }).join('');
+      row.querySelectorAll('.crew-avatar').forEach(btn => {
+        btn.onclick = () => openThrowFromBubble(btn.dataset.name, btn.dataset.addr);
+      });
+    }
+  }
+  try { renderBubbleHome(); } catch (e) { console.warn('bubble home', e); }
+}
 function addrToColor(addr) {
-  const h = parseInt(addr.slice(2,6), 16) % 360;
+  const h = parseInt(String(addr || '0x00').slice(2, 6), 16) % 360;
   return `hsl(${h},55%,38%)`;
 }
 
@@ -5412,6 +5645,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   /* ── Wallet screen ── */
   document.getElementById('btn-throw').onclick  = openThrowScreen;
+
+  try { wireBubbleHome(); } catch (e) { console.warn('wireBubbleHome', e); }
 
   const holdemBtn = document.getElementById('btn-open-holdem');
   if (holdemBtn) holdemBtn.onclick = () => {
