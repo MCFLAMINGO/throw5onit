@@ -46,7 +46,9 @@ const TREASURY_ADDR = '0x774f484192Cf3F4fB9716Af2e15f44371fD32FEA'; // THROW tre
 // THROW fee: 1% on $1 bets, 3% on everything else
 // Applied at settlement — deducted from pot before winner receives
 function getThrowFee(amount) {
-  // Regular throws: flat 1% always
+  // Demo = face-value cash: $5 thrown = $5 caught (totals conserved across phones)
+  if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) return 0;
+  // Live throws: flat 1%
   return Math.round(amount * 0.01 * 1e6) / 1e6;
 }
 function getBetFee(amount) {
@@ -82,17 +84,34 @@ function setDemoMode(on) {
 
 /* ── Demo credit idempotency (stops $5 → $69 / $100 multi-credit) ── */
 const _seenCreditKeys = new Set();
-const SEEN_CREDIT_MAX = 100;
+const SEEN_CREDIT_MAX = 200;
+let _demoCreditClient = null;
+let _demoCreditAddr = null;
 
 function creditDedupeKey(data) {
   if (!data) return '';
-  if (data.hash) return 'h:' + String(data.hash).toLowerCase();
+  // Prefer throwId — one throw = one credit forever (hash alone can differ across pubs)
   if (data.throwId) return 't:' + String(data.throwId);
+  if (data.hash) return 'h:' + String(data.hash).toLowerCase();
   const from = (data.from || '').toLowerCase();
   const amt = Number(data.amount) || 0;
   const bucket = Math.floor((Number(data.ts) || Date.now()) / 8000);
   return 'f:' + from + ':' + amt.toFixed(4) + ':' + bucket;
 }
+
+function loadSeenCreditKeys() {
+  try {
+    const raw = sessionStorage.getItem('throw_seen_credits');
+    if (!raw) return;
+    JSON.parse(raw).forEach(k => { if (k) _seenCreditKeys.add(k); });
+  } catch(_) {}
+}
+function persistSeenCreditKeys() {
+  try {
+    sessionStorage.setItem('throw_seen_credits', JSON.stringify([..._seenCreditKeys].slice(-SEEN_CREDIT_MAX)));
+  } catch(_) {}
+}
+loadSeenCreditKeys();
 
 function markCreditSeen(key) {
   if (!key) return false;
@@ -102,16 +121,17 @@ function markCreditSeen(key) {
     const first = _seenCreditKeys.values().next().value;
     _seenCreditKeys.delete(first);
   }
+  persistSeenCreditKeys();
   return true;
 }
 
-/** Apply one demo credit. Returns true if balance changed. */
+/** Apply one demo credit. Returns true if balance changed. Sole mutator for demo receives. */
 function applyDemoCreditOnce(amount, meta) {
   if (!DEMO_MODE) return false;
   const amt = Number(amount) || 0;
   if (amt <= 0) return false;
   const key = creditDedupeKey(meta || { amount: amt, ts: Date.now() });
-  if (!markCreditSeen(key)) return false;
+  if (!key || !markCreditSeen(key)) return false;
   state.total = Math.round((state.total + amt) * 1e6) / 1e6;
   state.pathUSD = state.total;
   try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
@@ -142,43 +162,36 @@ function renderDemoBanner() {
 async function demoSendStablecoin(toAddr, usdAmount) {
   const fee    = getThrowFee(usdAmount);
   const net    = Math.max(0, usdAmount - fee);
-  if (state.total < usdAmount) throw new Error('Insufficient demo balance');
+  const face   = Math.round(Number(usdAmount) * 1e6) / 1e6;
+  if (state.total < face) throw new Error('Insufficient demo balance');
 
-  // 0.5/0.5 venue split in demo mode too
+  // 0.5/0.5 venue split in demo mode too (fee is 0 in demo — no-op)
   const isAtVenue = !!(_activeSponsor?.isVenue && _activeSponsor?.venueId);
   const venueFee  = isAtVenue ? Math.round(fee * 0.5 * 1e6) / 1e6 : 0;
   if (venueFee > 0) accrueVenueFee(_activeSponsor.venueId, _activeSponsor.name, venueFee, usdAmount);
 
-  // Deduct sender
-  state.total   = Math.max(0, state.total - usdAmount);
+  // Deduct sender — face amount (what they threw)
+  state.total   = Math.max(0, Math.round((state.total - face) * 1e6) / 1e6);
   state.pathUSD = state.total;
   try { localStorage.setItem('throw_demo_balance', state.total.toFixed(6)); } catch(_) {}
   renderWalletUI();
   // Simulate network delay
-  await new Promise(r => setTimeout(r, 1500));
+  await new Promise(r => setTimeout(r, 900));
   // Fake hash
   const hash = '0xDEMO' + Math.random().toString(16).slice(2, 14).toUpperCase();
-  // Credit receiver via MQTT demo topic (if they're in the same room)
-  if (room.client && room.code) {
-    const msg = JSON.stringify({
-      event: 'demo_credit',
-      to:    toAddr,
-      from:  state.account.address,
-      amount: net,
-      hash,
-      ts: Date.now(),
-    });
-    room.client.publish('throw5/room/' + room.code + '/demo', msg, { qos: 0 });
-  }
-  // Also broadcast globally so receiver sees credit even without shared room
-  _demoCreditGlobal(toAddr, net, hash, state.pendingThrowId || null);
-  state.txHistory.unshift({ type: 'sent', amount: usdAmount, to: toAddr, hash, ts: Date.now() });
+  const throwId = state.pendingThrowId || null;
+  // Single credit path — wallet topic only (room /demo was unused & risked confusion)
+  // Credit face amount in demo so phones stay in sync ($5 → $5)
+  _demoCreditGlobal(toAddr, face, hash, throwId);
+  state.txHistory.unshift({ type: 'sent', amount: face, to: toAddr, hash, ts: Date.now() });
   return hash;
 }
 
 function _demoCreditGlobal(toAddr, amount, hash, throwId) {
   // Publish on a per-address topic so receiver always gets credited.
   // Do NOT retain — retained credits re-fire on reconnect and inflate balances.
+  if (!toAddr || !(amount > 0)) return;
+  const tid = throwId || ('auto_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
   try {
     const clientId = 'throw_dcr_' + Math.random().toString(36).slice(2,8);
     const c = mqtt.connect(MQTT_BROKER, { clientId, clean: true, connectTimeout: 6000, reconnectPeriod: 0 });
@@ -188,13 +201,14 @@ function _demoCreditGlobal(toAddr, amount, hash, throwId) {
         to: toAddr,
         from: state.account?.address,
         fromName: getHandle() || (state.account?.address?.slice(0, 6) || ''),
-        amount,
-        hash,
-        throwId: throwId || null,
+        amount: Math.round(Number(amount) * 1e6) / 1e6,
+        hash: hash || null,
+        throwId: tid,
         demo: true,
         ts: Date.now(),
       });
-      c.publish('throw5/wallet/' + toAddr.toLowerCase() + '/credit', msg, { qos: 1 }, () => {
+      // qos 1, NOT retained
+      c.publish('throw5/wallet/' + toAddr.toLowerCase() + '/credit', msg, { qos: 1, retain: false }, () => {
         try { c.end(true); } catch(_) {}
       });
     });
@@ -676,24 +690,34 @@ function subscribeSponsorChannel() {
 
 function subscribeDemoCredits(myAddr) {
   if (!myAddr) return;
-  const topic = 'throw5/wallet/' + myAddr.toLowerCase() + '/credit';
+  const addrLc = myAddr.toLowerCase();
+  // Singleton — never stack multiple MQTT credit listeners (that multiplies $5 → $25+)
+  if (_demoCreditClient && _demoCreditAddr === addrLc) return;
+  try { _demoCreditClient?.end(true); } catch(_) {}
+  _demoCreditClient = null;
+  _demoCreditAddr = addrLc;
+
+  const topic = 'throw5/wallet/' + addrLc + '/credit';
   const clientId = 'throw_sub_' + Math.random().toString(36).slice(2,8);
   const c = mqtt.connect(MQTT_BROKER, { clientId, clean: true, connectTimeout: 8000, reconnectPeriod: 3000 });
+  _demoCreditClient = c;
   c.on('connect', () => c.subscribe(topic, { qos: 1 }));
   c.on('message', (_t, msg) => {
     try {
-      const data = JSON.parse(msg.toString());
-      const myAddrLc = myAddr.toLowerCase();
+      const raw = msg.toString();
+      if (!raw) return; // retained clear
+      const data = JSON.parse(raw);
+      const myAddrLc = addrLc;
       const toMatch  = data.to && data.to.toLowerCase() === myAddrLc;
 
-      // Demo credit — SINGLE source of truth for play-money balance (deduped by hash/throwId)
+      // Demo credit — ONLY path that mutates play-money balance
       if (data.event === 'demo_credit' && toMatch) {
         const amt = parseFloat(data.amount) || 0;
         const fromName = data.fromName || (data.from ? data.from.slice(0, 6) : 'Someone');
         if (amt > 0) {
           const credited = applyDemoCreditOnce(amt, data);
-          // Clear any legacy retained credit so reconnects don't re-deliver junk
-          try { c.publish('throw5/wallet/' + myAddrLc + '/credit', '', { qos: 1, retain: true }); } catch(_) {}
+          // Clear any legacy retained credit so reconnects don't re-deliver
+          try { c.publish(topic, '', { qos: 1, retain: true }); } catch(_) {}
           if (credited) {
             showTxFlash('💸', '$' + amt.toFixed(2), fromName + ' threw you $' + amt.toFixed(2) + '!');
             moneyRain();
@@ -706,41 +730,28 @@ function subscribeDemoCredits(myAddr) {
             state.bet.joinedEscrow = null;
             clearPendingBetButton();
           }
-          // Catch UI only — never credit again inside onCatchHit
+          // Catch UI only — never credit again
           if (catchState.active && !catchState.fired) {
             onCatchHit(amt, fromName, data.throwId || data.hash || null, 'demo_credit', { skipCredit: true });
           }
         }
+        return;
       }
-      // Proximity ping — UI / catch only. Never mutates demo balance (that caused $69/$100).
-      if (data.event === 'proximity_throw' && toMatch) {
+      // Proximity / live pings — UI only. NEVER mutate demo balance.
+      if ((data.event === 'proximity_throw' || data.event === 'throw_credit') && toMatch) {
         const amt = parseFloat(data.amount) || 0;
         const fromName = data.fromName || (data.from ? data.from.slice(0, 6) : 'Someone');
-        const pingKey = creditDedupeKey({ throwId: data.throwId, hash: data.hash, from: data.from, amount: amt, ts: data.ts });
-        if (amt > 0 && markCreditSeen('ping:' + pingKey)) {
+        const pingKey = 'ping:' + creditDedupeKey(data);
+        if (amt > 0 && markCreditSeen(pingKey)) {
           showTxFlash('💸', '$' + amt.toFixed(2), fromName + ' threw you $' + amt.toFixed(2) + '!');
           moneyRain();
           setTimeout(() => hideTxFlash(), 2800);
           if (!DEMO_MODE) refreshBalances();
         }
         if (catchState.active && !catchState.fired) {
-          onCatchHit(amt, fromName, data.throwId || null, 'proximity_throw', { skipCredit: true });
+          onCatchHit(amt, fromName, data.throwId || data.hash || null, data.event, { skipCredit: true });
         }
-      }
-      // Live throw landed — refresh chain balance (published after successful send)
-      if (data.event === 'throw_credit' && toMatch) {
-        const amt = parseFloat(data.amount) || 0;
-        const fromName = data.fromName || (data.from ? data.from.slice(0, 6) : 'Someone');
-        const key = creditDedupeKey(data);
-        if (markCreditSeen('live:' + key)) {
-          showTxFlash('💸', '$' + amt.toFixed(2), fromName + ' threw you $' + amt.toFixed(2) + '!');
-          setTimeout(() => hideTxFlash(), 3500);
-          moneyRain();
-        }
-        refreshBalances();
-        if (catchState.active && !catchState.fired) {
-          onCatchHit(amt, fromName, data.throwId || data.hash || null, 'throw_credit', { skipCredit: true });
-        }
+        return;
       }
       // Someone claimed a throw you sent
       if (data.event === 'claim_claimed' && toMatch) {
@@ -757,11 +768,12 @@ function subscribeDemoCredits(myAddr) {
       }
       // Texas Hold'em invite — subscribe to table topic so poker_start reaches this phone
       if (data.event === 'poker_invite' && toMatch && data.roomCode) {
-        acceptPokerInvite(data);
+        try { ensurePokerMqtt(data.roomCode); } catch(_) {}
+        try { acceptPokerInvite(data); } catch(_) {}
       }
       // Someone pointed THROW at our open Hold'em table — seat them
       if (data.event === 'poker_join_request' && toMatch) {
-        handlePokerJoinRequest(data);
+        try { handlePokerJoinRequest(data); } catch(_) {}
       }
       // Sponsor push via MQTT — update active sponsor for this session
       if (data.event === 'sponsor_push') {
@@ -771,6 +783,7 @@ function subscribeDemoCredits(myAddr) {
       }
     } catch(_) {}
   });
+  c.on('error', () => {});
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -2183,7 +2196,7 @@ bc.onmessage = (e) => {
     const myAddr = state.account?.address;
     if (!myAddr) return;
     if (payload.to && payload.to.toLowerCase() === myAddr.toLowerCase()) {
-      onCatchHit(payload.amount, payload.fromName || payload.from, payload.throwId, 'bc');
+      onCatchHit(payload.amount, payload.fromName || payload.from, payload.throwId, 'bc', { skipCredit: true });
     }
   }
 };
@@ -2323,6 +2336,7 @@ async function executeProximityThrow(target) {
     const hash = await sendStablecoin(target.addr, amount);
     // Live: tell receiver to refresh. Demo: demo_credit already published inside send.
     notifyReceiverDirect(target.addr, amount, { throwId, hash });
+    // Room ping is UI-only — never credit. Use same face amount for the flash.
     if (state.inRoom) publishThrow(fromAddr, target.addr, amount);
     touchContact(target.addr);
     points.add(amount);
@@ -2330,7 +2344,8 @@ async function executeProximityThrow(target) {
     if (_activeSponsor?.paid) logSponsorEvent('throw_coincidence', _activeSponsor);
     logVenueThrow(amount);
     showThrowSponsorCredit(_activeSponsor?.name || null);
-    await refreshBalances();
+    if (!DEMO_MODE) await refreshBalances();
+    else renderWalletUI();
     setTimeout(() => { hideTxFlash(); showScreen('wallet'); }, 1800);
   } catch (e) {
     hideTxFlash();
@@ -2369,7 +2384,7 @@ function renderThrowContacts(preselect) {
   if (!strip) return;
   const contacts = getContacts();
   if (!contacts.length) {
-    strip.innerHTML = '<div class="throw-no-contacts">No friends yet — hold &amp; say “add friend …” then swipe</div>';
+    strip.innerHTML = '<div class="throw-no-contacts">No friends yet — open CREW to add one</div>';
     return;
   }
   strip.innerHTML = contacts.map(c => {
@@ -2434,52 +2449,32 @@ function syncThrowHoldUI(opts) {
   const hintEl = document.getElementById('throw-hold-hint');
   const modeEl = document.getElementById('throw-hold-mode');
   const a = state.throwAmount || 5;
-
-  if (amountEl) {
-    amountEl.textContent = '$' + a;
-    if (opts.pulse) {
-      amountEl.classList.remove('pulse');
-      void amountEl.offsetWidth;
-      amountEl.classList.add('pulse');
-      setTimeout(() => amountEl.classList.remove('pulse'), 800);
-      try { if (navigator.vibrate) navigator.vibrate(24); } catch(_) {}
-    }
+  const fee = getThrowFee(a);
+  const feeEl = document.getElementById('throw-fee-line');
+  if (feeEl) {
+    if (DEMO_MODE || fee <= 0) feeEl.textContent = 'Demo · face value — $' + a + ' lands as $' + a;
+    else feeEl.textContent = `$${fee.toFixed(2)} fee — recipient gets $${(a - fee).toFixed(2)}`;
   }
 
-  if (state.throwMode === 'add-friend') {
-    const pending = state.pendingFriendName || 'FRIEND';
-    if (toEl) toEl.textContent = 'Add ' + pending;
-    if (modeEl) modeEl.textContent = 'Friend mode — aim & swipe up';
-    if (hintEl && !opts.keepHint) {
-      hintEl.textContent = state.inRoom
-        ? 'Point at their phone · swipe up to dock'
-        : 'Swipe up to scan & dock — or open ADD FRIEND';
-    }
-    const tapBtn = document.getElementById('btn-tap-throw');
-    if (tapBtn) {
-      tapBtn.textContent = 'TAP TO DOCK';
-      tapBtn.classList.remove('hidden');
-    }
-    return;
-  }
+  if (amountEl) amountEl.textContent = '$' + a;
+  const orbLabel = document.getElementById('throw-orb-label');
+  if (orbLabel) orbLabel.textContent = '$' + a;
 
   if (state.throwTarget) {
     if (toEl) toEl.textContent = '→ ' + String(state.throwTarget.name || '').toUpperCase().slice(0, 12);
-    if (modeEl) modeEl.textContent = 'Armed · swipe up to throw';
-    if (hintEl && !opts.keepHint) hintEl.textContent = 'Swipe up — $' + a + ' flies to ' + state.throwTarget.name;
+    if (hintEl && !opts.keepHint) hintEl.textContent = 'Hold & flick · or swipe up';
+    if (modeEl) modeEl.textContent = '';
     const tapBtn = document.getElementById('btn-tap-throw');
-    if (tapBtn) {
-      tapBtn.textContent = 'TAP TO THROW';
-      tapBtn.classList.remove('hidden');
-    }
+    if (tapBtn) { tapBtn.textContent = 'TAP TO THROW'; tapBtn.classList.remove('hidden'); }
+    const orbHint = document.getElementById('throw-orb-hint');
+    if (orbHint) orbHint.textContent = 'Hold & flick';
+    const orbSub = document.getElementById('throw-orb-sub');
+    if (orbSub) orbSub.textContent = 'Or swipe up — $' + a + ' to ' + state.throwTarget.name;
   } else {
     if (toEl) toEl.textContent = '';
+    if (hintEl && !opts.keepHint) hintEl.textContent = 'Pick a friend · hold & flick · or swipe up';
     if (modeEl) modeEl.textContent = '';
-    if (hintEl && !opts.keepHint) {
-      hintEl.textContent = 'Hold 1s · say “$5 to Erik” · swipe up';
-    }
-    const tapBtn = document.getElementById('btn-tap-throw');
-    if (tapBtn) tapBtn.classList.add('hidden');
+    document.getElementById('btn-tap-throw')?.classList.add('hidden');
   }
 }
 
@@ -2619,10 +2614,9 @@ function setupThrowScreen() {
 }
 
 function setupThrowAmountType() {
-  const wrap = document.getElementById('throw-hold-amount-wrap');
   const display = document.getElementById('throw-amount-display');
   const input = document.getElementById('throw-amount-type');
-  if (!wrap || !display || !input) return;
+  if (!display || !input) return;
 
   const commit = () => {
     const val = parseFloat(input.value);
@@ -2633,8 +2627,7 @@ function setupThrowAmountType() {
 
   display.onclick = (e) => {
     e.stopPropagation();
-    // Double-path: long press is hold surface; tap amount opens type fallback
-    if (throwHold.listening || throwHold.pointerId != null) return;
+    if (throwHold.pointerId != null) return;
     display.classList.add('hidden');
     input.classList.remove('hidden');
     input.value = String(state.throwAmount || 5);
@@ -2790,59 +2783,38 @@ function setupThrowHoldSurface() {
   const surface = document.getElementById('throw-hold-surface');
   if (!surface) return;
 
-  const HOLD_MS = 1000;
   const SWIPE_UP = 72;
   const SLIDE_PX = 28;
+  let firedThisGesture = false;
 
   const isInteractiveTarget = (el) => {
     if (!el || !el.closest) return false;
     return !!el.closest(
-      'button, input, textarea, a, .throw-contact-chip, .qbtn, .throw-anyone-panel, .throw-addr-fallback, .throw-secondary'
+      'button, input, textarea, a, details, .throw-contact-chip, .qbtn, .throw-orb, .throw-anyone-panel, .throw-addr-fallback, .throw-more'
     );
-  };
-
-  const clearHoldTimer = () => {
-    if (throwHold.holdTimer) {
-      clearTimeout(throwHold.holdTimer);
-      throwHold.holdTimer = null;
-    }
   };
 
   const onPointerDown = (e) => {
     if (isInteractiveTarget(e.target)) return;
     if (e.button != null && e.button !== 0) return;
-    // Don't steal focus from type input
     if (document.activeElement?.id === 'throw-amount-type') return;
-
+    firedThisGesture = false;
     throwHold.pointerId = e.pointerId;
     throwHold.startX = e.clientX;
     throwHold.startY = e.clientY;
-    throwHold.startT = Date.now();
     throwHold.slidingAmount = false;
     throwHold.amountAtStart = state.throwAmount || 5;
-    throwHold.armed = !!(state.throwTarget || state.throwMode === 'add-friend');
-    surface.classList.add('holding');
-    if (throwHold.armed) surface.classList.add('armed');
-
     try { surface.setPointerCapture(e.pointerId); } catch(_) {}
-
-    clearHoldTimer();
-    throwHold.holdTimer = setTimeout(() => {
-      throwHold.holdTimer = null;
-      startThrowListening();
-    }, HOLD_MS);
   };
 
   const onPointerMove = (e) => {
     if (throwHold.pointerId == null || e.pointerId !== throwHold.pointerId) return;
+    if (firedThisGesture) return;
     const dx = e.clientX - throwHold.startX;
     const dy = e.clientY - throwHold.startY;
 
-    // Horizontal slide → amount (when not clearly swiping up)
     if (!throwHold.slidingAmount && Math.abs(dx) > SLIDE_PX && Math.abs(dx) > Math.abs(dy) * 1.15) {
       throwHold.slidingAmount = true;
-      clearHoldTimer();
-      stopThrowListening({});
     }
     if (throwHold.slidingAmount) {
       const steps = Math.round(dx / 36);
@@ -2852,15 +2824,12 @@ function setupThrowHoldSurface() {
       if (idx < 0) idx = 1;
       const next = amounts[Math.max(0, Math.min(amounts.length - 1, idx + steps))];
       if (next !== state.throwAmount) setThrowAmount(next, { pulse: false });
-      const hint = document.getElementById('throw-hold-hint');
-      if (hint) hint.textContent = 'Amount $' + next + ' — swipe up to throw';
       return;
     }
 
-    // Swipe up while holding / after listen
+    // Swipe up once per gesture — withBusy inside executeProximityThrow blocks doubles
     if (dy < -SWIPE_UP && Math.abs(dy) > Math.abs(dx)) {
-      clearHoldTimer();
-      stopThrowListening({ keepArmed: true });
+      firedThisGesture = true;
       throwHold.pointerId = null;
       try { surface.releasePointerCapture(e.pointerId); } catch(_) {}
       fireThrowFromHold();
@@ -2869,30 +2838,14 @@ function setupThrowHoldSurface() {
 
   const onPointerUp = (e) => {
     if (throwHold.pointerId == null || e.pointerId !== throwHold.pointerId) return;
-    clearHoldTimer();
     const dy = e.clientY - throwHold.startY;
     const dx = e.clientX - throwHold.startX;
-    const heldLong = Date.now() - throwHold.startT >= HOLD_MS;
-
-    // Swipe up on release
-    if (dy < -SWIPE_UP && Math.abs(dy) > Math.abs(dx)) {
-      stopThrowListening({ keepArmed: true });
-      throwHold.pointerId = null;
-      surface.classList.remove('holding');
+    if (!firedThisGesture && dy < -SWIPE_UP && Math.abs(dy) > Math.abs(dx)) {
+      firedThisGesture = true;
       fireThrowFromHold();
-      return;
-    }
-
-    if (!heldLong && !throwHold.listening && !throwHold.slidingAmount) {
-      stopThrowListening({});
     }
     throwHold.pointerId = null;
     throwHold.slidingAmount = false;
-    surface.classList.remove('holding');
-    if (!throwHold.armed && state.throwMode !== 'add-friend' && !state.throwTarget) {
-      surface.classList.remove('armed');
-    }
-    syncThrowHoldUI({ keepHint: throwHold.listening });
   };
 
   if (!throwHold.wired) {
@@ -2903,29 +2856,85 @@ function setupThrowHoldSurface() {
     throwHold.wired = true;
   }
 
-  // Tap-to-throw fallback
   const tapBtn = document.getElementById('btn-tap-throw');
   if (tapBtn) {
     tapBtn.onclick = async (e) => {
       e.stopPropagation();
       await fireThrowFromHold();
     };
-    if (state.throwTarget || state.throwMode === 'add-friend') tapBtn.classList.remove('hidden');
+    if (state.throwTarget) tapBtn.classList.remove('hidden');
   }
 
-  resetThrowHoldClasses();
-  // Keep orb wiring as no-op safe for any leftover callers
   setupThrowOrb();
 }
 
 function setupThrowOrb() {
   const orb = document.getElementById('throw-orb');
-  if (!orb || orb.closest?.('.throw-legacy-stubs')) return;
-  // Legacy orb path — unused on bright hold surface
+  const orbHint = document.getElementById('throw-orb-hint');
+  if (!orb) return;
+  orb.classList.remove('charging', 'fired');
+
+  const startThrow = async (e) => {
+    e?.stopPropagation?.();
+    if (shouldJoinPokerInsteadOfThrow(state.throwTarget)) {
+      orb.classList.add('fired');
+      if (orbHint) orbHint.textContent = 'Joining…';
+      await joinNearbyPokerTable();
+      return;
+    }
+    if (!state.throwTarget) {
+      showToast('Pick a friend first');
+      return;
+    }
+    const hasPerm = await requestMotionPermission();
+    if (!hasPerm) {
+      // No motion — still allow release-to-throw / tap
+      orb.classList.add('charging');
+      if (orbHint) orbHint.textContent = 'Release to throw';
+      return;
+    }
+    orb.classList.add('charging');
+    if (orbHint) orbHint.textContent = 'FLICK!';
+    startGestureCapture(async () => {
+      orb.classList.remove('charging');
+      orb.classList.add('fired');
+      if (orbHint) orbHint.textContent = 'Thrown! ✓';
+      await executeProximityThrow(state.throwTarget);
+    });
+  };
+
+  const endThrow = async (e) => {
+    e?.stopPropagation?.();
+    if (orb.classList.contains('fired')) return;
+    const wasCharging = orb.classList.contains('charging');
+    stopGestureCapture();
+    orb.classList.remove('charging');
+    // Hold-and-release without flick still throws (cash toss feel)
+    if (wasCharging && state.throwTarget) {
+      orb.classList.add('fired');
+      if (orbHint) orbHint.textContent = 'Thrown! ✓';
+      await executeProximityThrow(state.throwTarget);
+      return;
+    }
+    if (orbHint) orbHint.textContent = state.throwTarget
+      ? 'Hold & flick'
+      : 'Hold & flick';
+  };
+
+  orb.ontouchstart = orb.onmousedown = startThrow;
+  orb.ontouchend = orb.onmouseup = endThrow;
+
+  const tapBtn = document.getElementById('btn-tap-throw');
+  if (tapBtn) {
+    tapBtn.onclick = async (e) => {
+      e.stopPropagation();
+      await fireThrowFromHold();
+    };
+  }
 }
 
 function setupVoice() {
-  // Voice is driven by hold surface; keep API for callers
+  // Optional — not required for throw. Keep recognition ready if browser supports it.
   getThrowSpeechRecognition();
 }
 
@@ -3023,7 +3032,8 @@ async function startCatchWindow() {
           const data = JSON.parse(msg.toString());
           if ((data.event === 'proximity_throw' || data.event === 'throw_credit')
               && data.to && data.to.toLowerCase() === myAddr.toLowerCase()) {
-            onCatchHit(data.amount, data.fromName || data.from, data.throwId, 'mqtt');
+            // UI only — never credit demo balance here (subscribeDemoCredits owns that)
+            onCatchHit(data.amount, data.fromName || data.from, data.throwId, 'mqtt', { skipCredit: true });
           }
         } catch(_) {}
       });
@@ -3035,7 +3045,7 @@ async function startCatchWindow() {
   const sonicStarted = await sonicListen(amt => {
     catchState.sonicReceived = true;
     catchState.sonicAmount   = amt;
-    onCatchHit(amt, 'nearby', null, 'sonic');
+    onCatchHit(amt, 'nearby', null, 'sonic', { skipCredit: true });
   });
 
   // ── Channel 3: Gesture — hold catch, detect incoming motion ──
@@ -3045,7 +3055,7 @@ async function startCatchWindow() {
       // Gesture catch alone doesn't move money — it confirms sonic/MQTT signal
       // But if both sonic AND gesture fire within 2s, high confidence → trigger
       if (catchState.sonicReceived && !catchState.fired) {
-        onCatchHit(catchState.sonicAmount, 'nearby', null, 'gesture+sonic');
+        onCatchHit(catchState.sonicAmount, 'nearby', null, 'gesture+sonic', { skipCredit: true });
       }
     });
   }
@@ -3057,7 +3067,8 @@ async function startCatchWindow() {
     await refreshBalances();
     if (state.total > startBal + 0.005) {
       const received = +(state.total - startBal).toFixed(2);
-      onCatchHit(received, 'on-chain', null, 'chain');
+      // Balance already moved via demo_credit / chain — UI only
+      onCatchHit(received, 'on-chain', null, 'chain', { skipCredit: true });
     }
   }, 3000);
 
@@ -3109,16 +3120,10 @@ function onCatchHit(amount, fromName, throwId, channel, opts) {
   if (orb)    { orb.classList.remove('live'); orb.classList.add('caught'); }
   if (status)  status.textContent = '$' + (+amount).toFixed(2) + ' caught! 💸';
 
-  // Balance: demo_credit MQTT is the only demo credit path. Catch UI must not double-add.
-  // Optional credit only for sonic/chain fallbacks that never saw demo_credit.
+  // Balance: demo_credit MQTT is the ONLY demo credit path.
+  // Catch / sonic / chain / bc must NEVER add play money — that stacked $5 → $25+.
   if (!opts.skipCredit && DEMO_MODE && amount > 0 && channel !== 'demo_credit') {
-    applyDemoCreditOnce(+amount, {
-      throwId: throwId || null,
-      hash: null,
-      from: fromName,
-      amount: +amount,
-      ts: Date.now(),
-    });
+    // Intentionally no-op for balance. UI flash only.
   }
 
   moneyRain();

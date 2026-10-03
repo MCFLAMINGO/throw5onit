@@ -395,8 +395,8 @@
     </button>
   </div>
 
-  <!-- Action grid — THROW is the only hero action -->
-  <div class="action-grid">
+  <!-- Action grid — THROW is the only hero. IOU parked in profile. -->
+  <div class="action-grid action-grid-throw-only">
     <button class="action-card action-small" id="btn-dock">
       <div class="action-icon">
         <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="14" r="6" stroke="white" stroke-width="2.5"/><path d="M8 34c0-6.627 5.373-12 12-12s12 5.373 12 12" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>
@@ -412,7 +412,7 @@
       </div>
       <span>THROW</span>
     </button>
-    <button class="action-card action-small" id="btn-open-bet">
+    <button class="action-card action-small action-parked" id="btn-open-bet" title="IOU / pots — in profile">
       <div class="action-icon">
         <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="13" stroke="white" stroke-width="2.5"/><circle cx="20" cy="20" r="4" fill="white"/><path d="M20 7 L20 11M20 29 L20 33M7 20 L11 20M29 20 L33 20" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
       </div>
@@ -424,8 +424,8 @@
     LOAD $50 FOR TONIGHT
   </button>
 
-  <!-- DEMO MODE toggle — visible on wallet screen -->
-  <button class="demo-mode-btn" id="btn-demo-toggle">
+  <!-- DEMO MODE — tucked away; also in profile -->
+  <button class="demo-mode-btn demo-mode-btn-quiet" id="btn-demo-toggle">
     <span id="demo-mode-btn-label">ENABLE DEMO MODE</span>
     <span class="demo-mode-btn-sub">Test with $50 play money</span>
   </button>
@@ -497,27 +497,21 @@
 </div>
 
 <!-- ═══ SCREEN: THROW ════════════════════════════════════════════════════════ -->
-<div id="screen-throw" class="screen throw-bright">
-  <button type="button" class="back-btn throw-back-bright" id="throw-back">← Wallet</button>
+<div id="screen-throw" class="screen">
+  <button type="button" class="back-btn" id="throw-back">← Wallet</button>
+  <div class="throw-ui" id="throw-hold-surface">
+    <div class="throw-amount-hero" id="throw-amount-display">$5</div>
+    <input class="throw-amount-type hidden" id="throw-amount-type" type="number"
+      min="1" max="50" step="1" inputmode="decimal" enterkeyhint="done"
+      aria-label="Type amount" />
+    <div class="throw-to-line" id="throw-hold-to"></div>
+    <div class="throw-hint" id="throw-hold-hint">Pick a friend · hold &amp; flick · or swipe up</div>
+    <div class="throw-hold-mode hidden" id="throw-hold-mode"></div>
 
-  <!-- Full-screen bright hold surface: hold 1s → speak → swipe up -->
-  <div class="throw-hold-surface" id="throw-hold-surface">
-    <div class="throw-hold-bg" aria-hidden="true"></div>
+    <!-- WHO -->
+    <div class="throw-contacts-strip" id="throw-contacts-strip"></div>
 
-    <div class="throw-hold-stage" id="throw-hold-stage">
-      <div class="throw-hold-amount-wrap" id="throw-hold-amount-wrap">
-        <div class="throw-hold-amount" id="throw-amount-display">$5</div>
-        <input class="throw-amount-type hidden" id="throw-amount-type" type="number"
-          min="1" max="50" step="1" inputmode="decimal" enterkeyhint="done"
-          aria-label="Type amount" />
-      </div>
-      <div class="throw-hold-to" id="throw-hold-to"></div>
-      <div class="throw-hold-hint" id="throw-hold-hint">Hold 1s · say “$5 to Erik” · swipe up</div>
-      <div class="throw-hold-mode" id="throw-hold-mode"></div>
-      <button type="button" class="btn-tap-throw hidden" id="btn-tap-throw">TAP TO THROW</button>
-    </div>
-
-    <!-- HOW MUCH — horizontal slide (close to amount) -->
+    <!-- HOW MUCH -->
     <div class="throw-amounts-scroll" id="throw-amounts-scroll">
       <button class="qbtn" data-amount="1">$1</button>
       <button class="qbtn active" data-amount="5">$5</button>
@@ -533,14 +527,29 @@
     </div>
     <div class="throw-fee-line" id="throw-fee-line">$0.15 fee — recipient gets $4.85</div>
 
-    <!-- WHO — crew chips -->
-    <div class="throw-contacts-strip" id="throw-contacts-strip"></div>
+    <!-- TOSS ORB -->
+    <div class="throw-orb-arena" id="throw-orb-arena">
+      <div class="throw-orb-wrap" id="throw-orb-wrap">
+        <div class="throw-orb" id="throw-orb">
+          <div class="throw-orb-ring" id="throw-orb-ring"></div>
+          <div class="throw-orb-charge" id="throw-orb-charge"></div>
+          <div class="orb-sponsor-bg" id="orb-sponsor-bg"></div>
+          <div class="throw-orb-label" id="throw-orb-label">$5</div>
+          <div class="throw-orb-hint" id="throw-orb-hint">Hold &amp; flick</div>
+        </div>
+        <div class="throw-orb-sub" id="throw-orb-sub">Or swipe up anywhere</div>
+        <button class="btn-tap-throw hidden" id="btn-tap-throw">TAP TO THROW</button>
+      </div>
+    </div>
 
-    <!-- Secondary tools (claim / address / rain) — below the hold stage -->
-    <div class="throw-secondary" id="throw-secondary">
+    <div class="throw-sponsor-credit hidden" id="throw-sponsor-credit"></div>
+
+    <!-- More options — collapsed -->
+    <details class="throw-more" id="throw-secondary">
+      <summary>More ways to send</summary>
       <div class="throw-anyone-panel" id="throw-anyone-panel">
         <div class="throw-anyone-title">Throw at anyone</div>
-        <div class="throw-anyone-sub">They don’t need the app yet — claim link waits until they tap.</div>
+        <div class="throw-anyone-sub">They don’t need the app — claim link waits until they tap.</div>
         <div class="throw-anyone-row">
           <input class="throw-anyone-input" id="throw-anyone-input" type="text"
             placeholder="Name, phone, or email" autocomplete="off" />
@@ -567,16 +576,12 @@
       <button class="make-it-rain-btn hidden" id="btn-make-it-rain">Make It Rain</button>
       <button type="button" class="btn-ghost cast-stage-btn" id="btn-cast-stage">Cast stage · projector</button>
       <button type="button" class="btn-ghost hidden" id="btn-share-rain">Share the rain</button>
-    </div>
+    </details>
 
-    <!-- Hidden stubs — keep sponsor / orb helpers null-safe -->
+    <!-- Stubs for sponsor track ids (wallet strips still use these helpers) -->
     <div class="throw-legacy-stubs" aria-hidden="true" hidden>
-      <div id="throw-orb-arena"><div id="sponsor-strip-left"><div id="sponsor-track-left"></div></div>
-        <div id="throw-orb-wrap"><div id="throw-orb"><div id="throw-orb-ring"></div><div id="throw-orb-charge"></div>
-          <div id="orb-sponsor-bg"></div><div id="throw-orb-label">$5</div><div id="throw-orb-hint"></div></div>
-          <div id="throw-orb-sub"></div></div>
-        <div id="sponsor-strip-right"><div id="sponsor-track-right"></div></div></div>
-      <div id="throw-sponsor-credit" class="hidden"></div>
+      <div id="sponsor-strip-left"><div id="sponsor-track-left"></div></div>
+      <div id="sponsor-strip-right"><div id="sponsor-track-right"></div></div>
     </div>
   </div>
 </div>
