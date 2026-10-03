@@ -395,8 +395,8 @@
     </button>
   </div>
 
-  <!-- Action grid — THROW is the only hero. IOU parked in profile. -->
-  <div class="action-grid action-grid-throw-only">
+  <!-- Action grid — THROW + Hold'em (cash-game flagship). IOU stays in contact/profile. -->
+  <div class="action-grid action-grid-throw-holdem">
     <button class="action-card action-small" id="btn-dock">
       <div class="action-icon">
         <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="14" r="6" stroke="white" stroke-width="2.5"/><path d="M8 34c0-6.627 5.373-12 12-12s12 5.373 12 12" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>
@@ -412,13 +412,19 @@
       </div>
       <span>THROW</span>
     </button>
-    <button class="action-card action-small action-parked" id="btn-open-bet" title="IOU / pots — in profile">
+    <button class="action-card action-small action-holdem" id="btn-open-holdem" title="Texas Hold'em — throw cash into the pot">
       <div class="action-icon">
-        <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="13" stroke="white" stroke-width="2.5"/><circle cx="20" cy="20" r="4" fill="white"/><path d="M20 7 L20 11M20 29 L20 33M7 20 L11 20M29 20 L33 20" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg viewBox="0 0 40 40" fill="none">
+          <rect x="8" y="10" width="16" height="22" rx="2" stroke="white" stroke-width="2.2"/>
+          <rect x="16" y="8" width="16" height="22" rx="2" stroke="white" stroke-width="2.2" fill="rgba(0,0,0,0.35)"/>
+          <circle cx="24" cy="19" r="2.2" fill="white"/>
+        </svg>
       </div>
-      <span>IOU</span>
+      <span>HOLD'EM</span>
     </button>
   </div>
+  <!-- Parked IOU entry — still reachable for split-the-tab pots -->
+  <button type="button" class="iou-link-quiet" id="btn-open-bet">IOU / split a tab</button>
 
   <button class="load-btn" id="btn-load-cash">
     LOAD $50 FOR TONIGHT
@@ -672,16 +678,16 @@
 <!-- ═══ SCREEN: POKER TABLE SETUP (HOST) ═════════════════════════════════════ -->
 <div id="screen-poker-setup" class="screen">
   <button type="button" class="back-btn" id="poker-setup-back">← Wallet</button>
-  <div class="bet-setup-ui">
-    <div class="screen-label">TEXAS HOLD'EM</div>
-    <div class="fee-notice" style="margin-top:-4px">Friends point THROW at this phone to sit. Or seat crew below. Put one unmuted phone in the middle — it calls blinds and turns.</div>
+  <div class="bet-setup-ui poker-setup-ui">
+    <div class="screen-label">HOLD'EM</div>
+    <p class="poker-hero-line">Throw cash into the pot. Phone deals the voice. Host pays the winner.</p>
     <div class="poker-setup-code" id="poker-setup-code">Table —</div>
-    <div class="fee-notice" id="poker-throw-join-hint" style="margin-top:4px;opacity:0.9">Open table — nearby phones can THROW to join</div>
+    <div class="fee-notice" id="poker-throw-join-hint" style="margin-top:4px;opacity:0.9">Open table — nearby phones THROW at you to sit · $50 stack from pocket</div>
 
     <div class="pot-arena" style="height:300px;margin:16px 0">
       <div class="pot-orb" id="poker-setup-orb">
         <div class="pot-orb-amount" style="font-size:24px">$1/$2</div>
-        <div class="pot-orb-sub">BLINDS</div>
+        <div class="pot-orb-sub">BLINDS · BEER MONEY</div>
       </div>
       <div class="pot-orbit" id="poker-setup-orbit"></div>
     </div>
@@ -692,15 +698,15 @@
 
     <label style="display:flex;align-items:center;gap:8px;justify-content:center;margin:10px 0;font-size:13px;opacity:0.85">
       <input type="checkbox" id="poker-join-self" checked />
-      Join as player
+      Sit me too
     </label>
     <label style="display:flex;align-items:center;gap:8px;justify-content:center;margin:6px 0;font-size:13px;opacity:0.85">
       <input type="checkbox" id="poker-table-voice" checked />
-      Table voice — calls blinds, bets, and whose turn it is
+      Table voice — blinds, bets, whose turn
     </label>
     <label style="display:flex;align-items:center;gap:8px;justify-content:center;margin:6px 0 10px;font-size:13px;opacity:0.85">
       <input type="checkbox" id="poker-table-center" checked />
-      Center-of-table display (put this phone in the middle)
+      Center phone (put this one in the middle)
     </label>
 
     <button class="btn-primary" id="btn-poker-start" disabled>Deal — start the hand</button>
@@ -718,7 +724,7 @@
       <button type="button" class="poker-tool-btn" id="btn-poker-leave-table" title="Leave table for good">Leave</button>
     </div>
 
-    <div class="poker-announce" id="poker-announce-line">Real cards · phone runs the pot</div>
+    <div class="poker-announce" id="poker-announce-line">Throw cash · voice deals · host pays</div>
     <div class="poker-street-badge" id="poker-street-badge">PREFLOP</div>
     <div class="pot-bet-text" id="poker-stack-text" style="font-size:14px;opacity:0.85">YOUR STACK: $50.00</div>
 
@@ -733,27 +739,16 @@
     <div id="poker-action-area" class="poker-action-panel">
       <div id="poker-turn-label" class="poker-turn-label">Waiting…</div>
 
-      <!-- Raise scroller — hidden when it's not your turn -->
-      <div id="poker-raise-row" style="display:none;flex-direction:row;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:4px 2px 6px;width:100%;">
-        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="1">$1</button>
-        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="5">$5</button>
-        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="10">$10</button>
-        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="15">$15</button>
-        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="20">$20</button>
-        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="25">$25</button>
-        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="30">$30</button>
-        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="35">$35</button>
-        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="40">$40</button>
-        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="45">$45</button>
-        <button style="flex-shrink:0" class="qbtn poker-raise-chip" data-raiseamt="50">$50</button>
-      </div>
+      <!-- Compact raise targets — filled by renderPokerTable -->
+      <div id="poker-raise-row" class="poker-raise-row" style="display:none"></div>
 
       <div id="poker-action-buttons" class="poker-action-buttons"></div>
     </div>
 
     <div id="poker-showdown-controls" class="poker-host-controls" style="display:none">
-      <div class="fee-notice">Real hands — tap the winner, then pay out. Pot rains into their pocket.</div>
+      <div class="fee-notice" id="poker-showdown-hint">Tap the winner — pot rains into their pocket (can exceed $50).</div>
       <button class="btn-primary" id="btn-poker-payout" disabled>Pay Out</button>
+      <button class="btn-primary poker-next-hand-btn hidden" id="btn-poker-next-hand">Next hand</button>
     </div>
   </div>
 </div>
