@@ -5861,6 +5861,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const pokerJoinSelf = document.getElementById('poker-join-self');
   if (pokerJoinSelf) pokerJoinSelf.onchange = () => renderPokerSetup();
   loadPokerTablePrefs();
+  try { wireJabSheet(); } catch (e) { console.warn('wireJabSheet', e); }
   const voiceToggle = document.getElementById('btn-poker-voice-toggle');
   if (voiceToggle) voiceToggle.onclick = () => {
     _pokerVoiceOn = !_pokerVoiceOn;
@@ -6417,16 +6418,37 @@ function pokerHaptic() {
 
 /* ── Table voice + center-of-table display ──
    Real cards stay physical. This phone is the glowing pot in the middle
-   that calls blinds, turns, and actions out loud. */
+   that calls blinds, turns, and actions out loud — and roasts tanks. */
 let _pokerVoiceOn = true;
 let _pokerTableCenter = true;
 let _pokerSpeakChain = Promise.resolve();
+let _pokerWakeLock = null;
+let _pokerStallTimer = null;
+let _pokerStallTick = 0;
+let _pokerStallSeatAddr = null;
+let _pokerBrightnessTimer = null;
+let _jabRecorder = null;
+let _jabRecordingChunks = [];
+let _jabMediaStream = null;
+
+const POKER_STALL_FIRST_MS = 12000;
+const POKER_STALL_NEXT_MS = 9000;
+
+const POKER_DEFAULT_JABS = [
+  'Yo buddy, get a move on.',
+  'One plus one is two. It\'s easy math, you dolt.',
+  'Hey — you want to dial your mom for some advice?',
+  'The cards are not going to play themselves.',
+  'Clock\'s ticking. This is beer money, not chess.',
+  'We can see you thinking. It\'s not helping.',
+  'Fold, call, or raise. Those are the options, genius.',
+  'Take your time. We\'ll just age here.',
+];
 
 function pokerSeatName(seat) {
   if (!seat) return 'Player';
   const n = (seat.name || '').trim();
   if (!n || n.toUpperCase() === 'YOU') {
-    // Prefer a friendlier call if it's local
     try {
       const h = typeof getHandle === 'function' ? getHandle() : '';
       if (h) return h;
@@ -6487,7 +6509,6 @@ function pokerSpeak(text, forceSpeak) {
       u.rate = 0.98;
       u.pitch = 1;
       u.volume = 1;
-      // Prefer a clear English voice when available
       try {
         const voices = window.speechSynthesis.getVoices() || [];
         const en = voices.find(v => /en[-_]US/i.test(v.lang) && /Google|Samantha|Daniel|Alex|Female|Male/i.test(v.name))
@@ -6499,10 +6520,60 @@ function pokerSpeak(text, forceSpeak) {
       u.onend = done;
       u.onerror = done;
       window.speechSynthesis.speak(u);
-      // Safety resolve if engine stalls
       setTimeout(done, Math.min(12000, 1200 + String(text).length * 70));
     } catch(_) { resolve(); }
   }));
+}
+
+/* ── Brightness / wake lock for center-of-table phone ── */
+async function requestPokerWakeLock() {
+  try {
+    if (!('wakeLock' in navigator)) return;
+    if (_pokerWakeLock) return;
+    _pokerWakeLock = await navigator.wakeLock.request('screen');
+    _pokerWakeLock.addEventListener('release', () => { _pokerWakeLock = null; });
+  } catch(_) { _pokerWakeLock = null; }
+}
+
+function releasePokerWakeLock() {
+  try { _pokerWakeLock?.release(); } catch(_) {}
+  _pokerWakeLock = null;
+}
+
+function flashPokerBrightness(kind) {
+  const screen = document.getElementById('screen-poker-table');
+  if (!screen) return;
+  screen.classList.remove('turn-bright', 'stall-bright', 'action-bright');
+  void screen.offsetWidth;
+  const cls = kind === 'stall' ? 'stall-bright'
+    : kind === 'action' ? 'action-bright'
+    : 'turn-bright';
+  screen.classList.add(cls);
+  clearTimeout(_pokerBrightnessTimer);
+  _pokerBrightnessTimer = setTimeout(() => {
+    screen.classList.remove('turn-bright', 'stall-bright', 'action-bright');
+  }, kind === 'stall' ? 1600 : 1100);
+}
+
+function showPokerTurnHero(seat, sub) {
+  const hero = document.getElementById('poker-turn-hero');
+  const nameEl = document.getElementById('poker-turn-hero-name');
+  const subEl = document.getElementById('poker-turn-hero-sub');
+  if (!hero) return;
+  if (!_pokerTableCenter && !(state.poker?.isHost)) {
+    hero.classList.add('hidden');
+    return;
+  }
+  if (nameEl) nameEl.textContent = pokerSeatName(seat);
+  if (subEl) subEl.textContent = sub || 'Action';
+  hero.classList.remove('hidden');
+  hero.classList.remove('pulse');
+  void hero.offsetWidth;
+  hero.classList.add('pulse');
+}
+
+function hidePokerTurnHero() {
+  document.getElementById('poker-turn-hero')?.classList.add('hidden');
 }
 
 function applyPokerTableMode() {
@@ -6518,6 +6589,8 @@ function applyPokerTableMode() {
     cBtn.classList.toggle('on', !!_pokerTableCenter);
     cBtn.textContent = _pokerTableCenter ? '✦ Table' : '○ Table';
   }
+  if (_pokerTableCenter || state.poker?.isHost) requestPokerWakeLock();
+  else if (!state.poker) releasePokerWakeLock();
   try {
     localStorage.setItem('throw_poker_voice', _pokerVoiceOn ? '1' : '0');
     localStorage.setItem('throw_poker_center', _pokerTableCenter ? '1' : '0');
@@ -6537,6 +6610,234 @@ function loadPokerTablePrefs() {
   if (cSetup) cSetup.checked = _pokerTableCenter;
 }
 
+/* ── Stall jabs (built-in TTS + optional recorded audio) ── */
+function loadCustomJabs() {
+  try {
+    return JSON.parse(localStorage.getItem('throw_poker_jabs') || '[]');
+  } catch(_) { return []; }
+}
+
+function saveCustomJabs(list) {
+  try { localStorage.setItem('throw_poker_jabs', JSON.stringify((list || []).slice(0, 24))); } catch(_) {}
+}
+
+function addTextJab(text) {
+  const t = String(text || '').trim();
+  if (!t) return;
+  const list = loadCustomJabs();
+  list.unshift({ id: 't' + Date.now(), type: 'text', text: t.slice(0, 120), ts: Date.now() });
+  saveCustomJabs(list);
+  renderJabSheet();
+}
+
+function addAudioJab(dataUrl) {
+  if (!dataUrl) return;
+  const list = loadCustomJabs();
+  // Cap audio payloads — keep last few recordings small
+  const audioOnly = list.filter(j => j.type === 'audio');
+  if (audioOnly.length >= 6) {
+    const drop = audioOnly[audioOnly.length - 1];
+    const idx = list.findIndex(j => j.id === drop.id);
+    if (idx >= 0) list.splice(idx, 1);
+  }
+  list.unshift({ id: 'a' + Date.now(), type: 'audio', dataUrl, ts: Date.now() });
+  saveCustomJabs(list);
+  renderJabSheet();
+}
+
+function deleteJab(id) {
+  saveCustomJabs(loadCustomJabs().filter(j => j.id !== id));
+  renderJabSheet();
+}
+
+function pickStallJab(name) {
+  const custom = loadCustomJabs();
+  const pool = [];
+  for (const j of custom) {
+    if (j.type === 'text' && j.text) pool.push({ kind: 'text', text: j.text.replace(/\{name\}/gi, name) });
+    if (j.type === 'audio' && j.dataUrl) pool.push({ kind: 'audio', dataUrl: j.dataUrl });
+  }
+  for (const line of POKER_DEFAULT_JABS) {
+    pool.push({ kind: 'text', text: name + '. ' + line });
+  }
+  if (!pool.length) return { kind: 'text', text: name + ', get a move on.' };
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function playStallJab(name) {
+  const jab = pickStallJab(name || 'Buddy');
+  flashPokerBrightness('stall');
+  if (jab.kind === 'audio') {
+    try {
+      const a = new Audio(jab.dataUrl);
+      a.volume = 1;
+      a.play().catch(() => pokerSpeak(name + ', get a move on.', true));
+      setPokerAnnounce('⏱ ' + (name || 'Player') + ' — still waiting…', false);
+      return;
+    } catch(_) {}
+  }
+  setPokerAnnounce(jab.text, true, true);
+}
+
+function clearPokerStallTimer() {
+  if (_pokerStallTimer) { clearTimeout(_pokerStallTimer); _pokerStallTimer = null; }
+  _pokerStallTick = 0;
+  _pokerStallSeatAddr = null;
+}
+
+function schedulePokerStallJabs(seat) {
+  clearPokerStallTimer();
+  if (!seat) return;
+  // Only the table phone / host runs the roast clock
+  const p = state.poker;
+  if (!p || (!p.isHost && !_pokerTableCenter)) return;
+  if (p.street === 'settled' || p.street === 'showdown' || p.street === 'waiting') return;
+
+  _pokerStallSeatAddr = (seat.addr || '').toLowerCase();
+  const arm = (delay) => {
+    _pokerStallTimer = setTimeout(() => {
+      const cur = state.poker;
+      if (!cur || cur.street === 'settled' || cur.street === 'showdown') return;
+      const live = cur.seats?.[cur.currentSeat];
+      if (!live || (live.addr || '').toLowerCase() !== _pokerStallSeatAddr) return;
+      _pokerStallTick += 1;
+      playStallJab(pokerSeatName(live));
+      try { if (navigator.vibrate) navigator.vibrate([40, 60, 40, 60, 80]); } catch(_) {}
+      arm(POKER_STALL_NEXT_MS);
+    }, delay);
+  };
+  arm(POKER_STALL_FIRST_MS);
+}
+
+function onPokerTurnVisual(seat) {
+  if (!seat) return;
+  const callAmt = Math.max(0, ((state.poker?.currentBet) || 0) - (seat.bet || 0));
+  const sub = callAmt > 0 ? ('$' + callAmt + ' to call') : 'Check or bet';
+  showPokerTurnHero(seat, sub);
+  flashPokerBrightness('turn');
+  schedulePokerStallJabs(seat);
+}
+
+function openJabSheet() {
+  renderJabSheet();
+  document.getElementById('jab-sheet')?.classList.remove('hidden');
+}
+
+function closeJabSheet() {
+  stopJabRecording(true);
+  document.getElementById('jab-sheet')?.classList.add('hidden');
+}
+
+function renderJabSheet() {
+  const preview = document.getElementById('jab-defaults-preview');
+  if (preview) {
+    preview.innerHTML = POKER_DEFAULT_JABS.slice(0, 3).map(t =>
+      '<div class="jab-chip">' + t + '</div>'
+    ).join('');
+  }
+  const list = document.getElementById('jab-custom-list');
+  if (!list) return;
+  const custom = loadCustomJabs();
+  if (!custom.length) {
+    list.innerHTML = '<div class="jab-empty">No custom jabs yet — hold record or type one.</div>';
+    return;
+  }
+  list.innerHTML = custom.map(j => {
+    const label = j.type === 'audio' ? '🎙 Recording' : ('“' + (j.text || '').slice(0, 48) + '”');
+    return '<div class="jab-row" data-id="' + j.id + '"><span>' + label + '</span>' +
+      '<button type="button" class="jab-del" data-del="' + j.id + '">Delete</button></div>';
+  }).join('');
+  list.querySelectorAll('[data-del]').forEach(btn => {
+    btn.onclick = () => deleteJab(btn.dataset.del);
+  });
+}
+
+async function startJabRecording() {
+  const status = document.getElementById('jab-record-status');
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Mic unavailable');
+    _jabMediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    _jabRecordingChunks = [];
+    const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
+      : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '');
+    _jabRecorder = mime ? new MediaRecorder(_jabMediaStream, { mimeType: mime }) : new MediaRecorder(_jabMediaStream);
+    _jabRecorder.ondataavailable = (e) => { if (e.data && e.data.size) _jabRecordingChunks.push(e.data); };
+    _jabRecorder.onstop = async () => {
+      try {
+        const blob = new Blob(_jabRecordingChunks, { type: _jabRecorder.mimeType || 'audio/webm' });
+        if (blob.size < 400) { if (status) status.textContent = 'Too short — hold longer'; return; }
+        if (blob.size > 350000) { if (status) status.textContent = 'Keep jabs under ~3 seconds'; return; }
+        const reader = new FileReader();
+        reader.onload = () => {
+          addAudioJab(String(reader.result || ''));
+          if (status) status.textContent = 'Jab saved — tanks beware';
+        };
+        reader.readAsDataURL(blob);
+      } catch (e) {
+        if (status) status.textContent = e.message || 'Save failed';
+      }
+      try { _jabMediaStream?.getTracks().forEach(t => t.stop()); } catch(_) {}
+      _jabMediaStream = null;
+    };
+    _jabRecorder.start();
+    if (status) status.textContent = 'Recording… release to save';
+  } catch (e) {
+    if (status) status.textContent = e.message || 'Mic blocked';
+    showToast('Mic needed to record jabs');
+  }
+}
+
+function stopJabRecording(cancel) {
+  const status = document.getElementById('jab-record-status');
+  try {
+    if (_jabRecorder && _jabRecorder.state !== 'inactive') {
+      if (cancel) {
+        _jabRecorder.ondataavailable = null;
+        _jabRecorder.onstop = () => {
+          try { _jabMediaStream?.getTracks().forEach(t => t.stop()); } catch(_) {}
+          _jabMediaStream = null;
+        };
+      }
+      _jabRecorder.stop();
+    } else {
+      try { _jabMediaStream?.getTracks().forEach(t => t.stop()); } catch(_) {}
+      _jabMediaStream = null;
+    }
+  } catch(_) {}
+  _jabRecorder = null;
+  if (cancel && status) status.textContent = 'Built-in roasts on · add yours';
+}
+
+function wireJabSheet() {
+  document.getElementById('jab-sheet-close')?.addEventListener('click', closeJabSheet);
+  document.getElementById('jab-sheet')?.addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'jab-sheet') closeJabSheet();
+  });
+  const rec = document.getElementById('btn-jab-record');
+  if (rec && !rec._wired) {
+    rec._wired = true;
+    const start = (e) => { e.preventDefault(); startJabRecording(); };
+    const stop = (e) => { e.preventDefault(); stopJabRecording(false); };
+    rec.addEventListener('mousedown', start);
+    rec.addEventListener('mouseup', stop);
+    rec.addEventListener('mouseleave', stop);
+    rec.addEventListener('touchstart', start, { passive: false });
+    rec.addEventListener('touchend', stop);
+    rec.addEventListener('touchcancel', stop);
+  }
+  document.getElementById('btn-jab-add-text')?.addEventListener('click', () => {
+    const input = document.getElementById('jab-text-input');
+    addTextJab(input?.value || '');
+    if (input) input.value = '';
+  });
+  document.getElementById('btn-jab-test')?.addEventListener('click', () => {
+    unlockPokerVoice();
+    playStallJab('Buddy');
+  });
+  document.getElementById('btn-poker-jabs')?.addEventListener('click', openJabSheet);
+  document.getElementById('btn-poker-jabs-setup')?.addEventListener('click', openJabSheet);
+}
+
 function announcePokerTurn(seat, currentBet) {
   const p = state.poker;
   const name = pokerSeatName(seat);
@@ -6548,7 +6849,6 @@ function announcePokerTurn(seat, currentBet) {
   const street = (p?.street || 'preflop');
   let line;
 
-  // Big blind option preflop (matched, hasn't closed action yet)
   if (street === 'preflop' && isBB && callAmt <= 0) {
     line = name + ', big blind is up. Check or raise. Pot ' + pokerMoneySpeak(pot) + '.';
   } else if (street === 'preflop' && isSB && callAmt > 0) {
@@ -6559,9 +6859,13 @@ function announcePokerTurn(seat, currentBet) {
     line = name + ', action. ' + pokerMoneySpeak(callAmt) + ' to call. Pot ' + pokerMoneySpeak(pot) + '.';
   }
   setPokerAnnounce(line, true);
+  onPokerTurnVisual(seat);
 }
 
 function announcePokerAction(data, seat) {
+  clearPokerStallTimer();
+  hidePokerTurnHero();
+  flashPokerBrightness('action');
   const p = state.poker;
   const name = pokerSeatName(seat);
   const a = data.action;
@@ -7255,6 +7559,9 @@ async function pokerSettle(winnerAddr) {
   const winner = p.seats.find(s => s.addr.toLowerCase() === winnerAddr.toLowerCase());
   if (!winner) return;
 
+  clearPokerStallTimer();
+  hidePokerTurnHero();
+
   const potWon = Number(p.pot) || 0;
 
   if (DEMO_MODE) {
@@ -7700,8 +8007,7 @@ function _handlePokerMessage(data, opts) {
     p.currentBet = data.currentBet;
     p.pot = data.pot;
     const seat = p.seats[p.currentSeat];
-    if (seat && !p.isHost) {
-      // Player phones show the call; if this is MY seat, speak a local nudge too
+    if (seat) {
       const name = pokerSeatName(seat);
       const mine = !!(p.myAddr && seat.addr && seat.addr.toLowerCase() === p.myAddr.toLowerCase());
       if (mine && _pokerVoiceOn) {
@@ -7712,9 +8018,10 @@ function _handlePokerMessage(data, opts) {
               ? 'Big blind is up. Check or raise.'
               : 'Your action. Check or bet.');
         setPokerAnnounce(nudge, true, true);
-      } else {
+      } else if (!p.isHost) {
         setPokerAnnounce(name + ', your action', false);
       }
+      onPokerTurnVisual(seat);
     }
     renderPokerTable();
     if (data.addr && p.myAddr && data.addr.toLowerCase() === p.myAddr.toLowerCase()) {
@@ -7780,6 +8087,9 @@ function _handlePokerMessage(data, opts) {
 }
 
 function leavePokerRoom() {
+  try { clearPokerStallTimer(); } catch(_) {}
+  try { hidePokerTurnHero(); } catch(_) {}
+  try { releasePokerWakeLock(); } catch(_) {}
   try { clearGlobalPokerTable(); } catch(_) {}
   try { _pokerMqttClient?.end(true); } catch(_) {}
   _pokerMqttClient = null;

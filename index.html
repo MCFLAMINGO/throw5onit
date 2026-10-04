@@ -466,6 +466,26 @@
   </div>
 </div>
 
+<!-- Poker stall jabs — record / type roasts for slow players -->
+<div id="jab-sheet" class="sheet-overlay hidden" role="dialog" aria-label="Stall jabs">
+  <div class="sheet-card jab-sheet-card">
+    <button type="button" class="sheet-close" id="jab-sheet-close" aria-label="Close">×</button>
+    <div class="group-sheet-brand">STALL JABS</div>
+    <p class="group-sheet-lead">When someone tanks, the table phone talks smack.</p>
+    <div class="jab-defaults" id="jab-defaults-preview"></div>
+    <div class="jab-record-row">
+      <button type="button" class="btn-primary" id="btn-jab-record">Hold to record</button>
+      <span class="jab-record-status" id="jab-record-status">Built-in roasts on · add yours</span>
+    </div>
+    <div class="jab-custom-list" id="jab-custom-list"></div>
+    <div class="jab-text-row">
+      <input id="jab-text-input" class="bet-input" type="text" maxlength="120" placeholder="Or type a jab for the dealer voice…" />
+      <button type="button" class="btn-ghost" id="btn-jab-add-text">Add</button>
+    </div>
+    <button type="button" class="btn-ghost" id="btn-jab-test">Test a jab</button>
+  </div>
+</div>
+
 <!-- ═══ SCREEN: DOCK ═══════════════════════════════════════════════════ -->
 <div id="screen-dock" class="screen">
   <button type="button" class="back-btn" id="dock-back">← Wallet</button>
@@ -726,15 +746,16 @@
     </label>
     <label style="display:flex;align-items:center;gap:8px;justify-content:center;margin:6px 0;font-size:13px;opacity:0.85">
       <input type="checkbox" id="poker-table-voice" checked />
-      Table voice — blinds, bets, whose turn
+      Dealer voice + brightness (phone in the middle)
     </label>
     <label style="display:flex;align-items:center;gap:8px;justify-content:center;margin:6px 0 10px;font-size:13px;opacity:0.85">
       <input type="checkbox" id="poker-table-center" checked />
-      Center phone (put this one in the middle)
+      This phone is the table
     </label>
 
     <button class="btn-primary" id="btn-poker-start" disabled>Deal — start the hand</button>
-    <button type="button" class="btn-ghost" id="btn-poker-leave-setup" style="width:100%;margin-top:10px;opacity:0.7">Leave table</button>
+    <button type="button" class="btn-ghost" id="btn-poker-jabs-setup" style="width:100%;margin-top:10px">Record stall jabs</button>
+    <button type="button" class="btn-ghost" id="btn-poker-leave-setup" style="width:100%;margin-top:8px;opacity:0.7">Leave table</button>
   </div>
 </div>
 
@@ -745,7 +766,13 @@
     <div class="poker-table-toolbar">
       <button type="button" class="poker-tool-btn" id="btn-poker-voice-toggle" title="Voice on/off">🔊 Voice</button>
       <button type="button" class="poker-tool-btn" id="btn-poker-center-toggle" title="Table center glow">✦ Table</button>
+      <button type="button" class="poker-tool-btn" id="btn-poker-jabs" title="Stall jabs">🎤 Jabs</button>
       <button type="button" class="poker-tool-btn" id="btn-poker-leave-table" title="Leave table for good">Leave</button>
+    </div>
+
+    <div class="poker-turn-hero hidden" id="poker-turn-hero" aria-live="assertive">
+      <div class="poker-turn-hero-name" id="poker-turn-hero-name">—</div>
+      <div class="poker-turn-hero-sub" id="poker-turn-hero-sub">Your action</div>
     </div>
 
     <div class="poker-announce" id="poker-announce-line">Throw cash · voice deals · host pays</div>
