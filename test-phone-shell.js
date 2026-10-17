@@ -14,6 +14,7 @@ console.log('1) Desktop phone shell');
   assert(css.includes('--phone-w: 390px'), 'phone width 390px');
   assert(css.includes('PHONE VIEW') || css.includes('phone PWA'), 'phone-view framing copy/comment');
   assert(css.includes('.screen,') || /\.screen,\s*\n\s*\.my-profile-modal/.test(css), 'screens constrained');
+  assert(css.includes('.sheet-overlay') && css.includes('.history-sheet'), 'sheets constrained to phone');
   assert(css.includes('border-radius: 28px'), 'device rounded frame');
   assert(css.includes('position: absolute') && css.includes('.screen > .back-btn'), 'back btn absolute in frame');
 }

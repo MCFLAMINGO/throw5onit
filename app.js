@@ -370,17 +370,22 @@ function showScreen(id) {
   const next = document.getElementById('screen-' + id);
   if (!next) return;
 
-  // Mark outgoing screens for a clean exit frame, then clear
+  // Mark outgoing screens for a clean exit frame
   document.querySelectorAll('.screen.active').forEach(el => {
     if (el !== next) el.classList.add('exit');
   });
 
+  // Activate immediately — inactive screens have pointer-events:none, so waiting
+  // 40ms before .active left every button dead during the fade.
+  next.classList.remove('exit');
+  next.classList.add('active');
+  currentScreen = id;
+
   _screenTimer = setTimeout(() => {
-    document.querySelectorAll('.screen.active, .screen.exit').forEach(el => {
+    document.querySelectorAll('.screen.exit').forEach(el => {
       el.classList.remove('active', 'exit');
     });
     next.classList.add('active');
-    currentScreen = id;
     try { next.scrollTop = 0; } catch(_) {}
     if (id === 'first-scan') {
       try { stopFirstScan(); } catch(_) {}
@@ -4783,6 +4788,14 @@ function wireBubbleHome() {
     self._wired = true;
     self.onclick = () => openPocketSheet();
   }
+
+  // Stop sheet-card taps from bubbling to the backdrop closer
+  document.querySelectorAll('.sheet-card').forEach((card) => {
+    if (card._sheetStop) return;
+    card._sheetStop = true;
+    card.addEventListener('click', (e) => e.stopPropagation());
+  });
+
   document.getElementById('pocket-sheet-close')?.addEventListener('click', closePocketSheet);
   document.getElementById('pocket-sheet')?.addEventListener('click', (e) => {
     if (e.target && e.target.id === 'pocket-sheet') closePocketSheet();
@@ -4800,15 +4813,23 @@ function wireBubbleHome() {
   document.getElementById('group-sheet')?.addEventListener('click', (e) => {
     if (e.target && e.target.id === 'group-sheet') closeGroupSheet();
   });
-  document.getElementById('btn-group-poker')?.addEventListener('click', () => {
+  document.getElementById('btn-group-poker')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     closeGroupSheet();
-    openPokerSetup().catch(e => showError(e.message || 'Could not open table'));
+    openPokerSetup().catch(err => showError(err.message || 'Could not open table'));
   });
-  document.getElementById('btn-group-wager')?.addEventListener('click', () => {
+  document.getElementById('btn-group-wager')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     closeGroupSheet();
     openBetSetup();
   });
-  document.getElementById('btn-group-party')?.addEventListener('click', () => openPartySheet());
+  document.getElementById('btn-group-party')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openPartySheet();
+  });
   document.getElementById('btn-group-qr')?.addEventListener('click', async () => {
     closeGroupSheet();
     try { await startHangoutHost(); } catch (e) { openDockScreen(); showToast(e.message || 'Hangout'); }
@@ -5544,6 +5565,8 @@ function shareOnX(text) {
 function hideBootLoader() {
   const bl = document.getElementById('boot-loader');
   if (!bl) return;
+  // Drop clicks immediately — opacity:0 still captures taps at z-index 9999
+  bl.style.pointerEvents = 'none';
   bl.style.transition = 'opacity 0.2s';
   bl.style.opacity = '0';
   setTimeout(() => { try { bl.remove(); } catch(_) {} }, 250);
@@ -5843,11 +5866,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (resumePot) resumePot.onclick = () => resumePotSession();
   const pokerStart = document.getElementById('btn-poker-start');
   if (pokerStart) pokerStart.onclick = () => {
-    startPokerGame(state.poker?.seats || [], state.poker?.roomCode).catch(e => {
+    const seats = state.poker?.seats || [];
+    startPokerGame(seats, state.poker?.roomCode).catch(e => {
       console.error('startPokerGame failed', e);
       showError('Could not start: ' + (e.message || e));
-      pokerStart.disabled = false;
-      pokerStart.textContent = 'Start Game';
+      pokerStart.disabled = seats.length < 2;
+      pokerStart.textContent = 'Deal — start the hand';
     });
   };
   const pokerAdv = document.getElementById('btn-poker-advance');
@@ -7157,7 +7181,13 @@ function renderPokerSetup() {
     };
   });
 
-  if (startBtn) startBtn.disabled = p.seats.length < 2;
+  if (startBtn) {
+    const ready = p.isHost && p.seats.length >= 2;
+    startBtn.disabled = !ready;
+    startBtn.textContent = p.isHost
+      ? (ready ? 'Deal — start the hand' : 'Seat 2+ to deal')
+      : 'Waiting for host to deal';
+  }
   if (p.isHost) { try { publishHostPokerBeacon(); } catch(_) {} }
   try { persistPokerSession(); } catch(_) {}
 }
@@ -7262,10 +7292,22 @@ function acceptPokerInvite(data) {
 
 async function startPokerGame(seats, roomCode) {
   const p = state.poker;
-  if (!p || !p.isHost) return;
-  if (!seats || seats.length < 2) return;
-
   const startBtn = document.getElementById('btn-poker-start');
+  if (!p) {
+    showToast('Open a table first');
+    return;
+  }
+  if (!p.isHost) {
+    showToast('Only the host can deal');
+    return;
+  }
+  seats = seats && seats.length ? seats : (p.seats || []);
+  if (!seats || seats.length < 2) {
+    showToast('Seat 2+ players — tap crew or Seat everyone');
+    if (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Deal — start the hand'; }
+    return;
+  }
+
   if (startBtn) {
     startBtn.disabled = true;
     startBtn.textContent = 'Seating crew…';

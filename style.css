@@ -3026,19 +3026,20 @@ a.contact-detail-value { color: var(--accent); text-decoration: none; }
   opacity: 0.5;
 }
 
-/* Sheets */
+/* Sheets — above phone chrome / demo strip so Poker·Wager·Party taps land */
 .sheet-overlay {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 10050;
   background: rgba(0,0,0,0.55);
   display: flex;
   align-items: flex-end;
   justify-content: center;
   padding: 16px;
   animation: sheetFade 180ms ease;
+  -webkit-tap-highlight-color: transparent;
 }
-.sheet-overlay.hidden { display: none; }
+.sheet-overlay.hidden { display: none !important; }
 @keyframes sheetFade {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -3051,6 +3052,7 @@ a.contact-detail-value { color: var(--accent); text-decoration: none; }
   border-radius: 22px 22px 18px 18px;
   padding: 22px 18px 20px;
   animation: sheetUp 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: auto;
 }
 @keyframes sheetUp {
   from { transform: translateY(24px); opacity: 0.6; }
@@ -5238,7 +5240,7 @@ button:disabled,
 .history-sheet {
   position: fixed;
   inset: 0;
-  z-index: 800;
+  z-index: 10050;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -5586,7 +5588,9 @@ button:disabled,
   .tx-flash,
   .points-modal,
   .backup-offer-modal,
-  .deal-push {
+  .deal-push,
+  .sheet-overlay,
+  .history-sheet {
     inset: auto !important;
     top: 50% !important;
     left: 50% !important;
@@ -5605,6 +5609,20 @@ button:disabled,
       0 0 0 12px #101010,
       0 32px 96px rgba(0, 0, 0, 0.85);
     z-index: 20;
+  }
+
+  /* Sheets / history sit above the active screen inside the same phone frame */
+  .sheet-overlay,
+  .history-sheet {
+    z-index: 40;
+    padding: 12px;
+    align-items: flex-end;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.1),
+      0 0 0 12px #101010,
+      0 32px 96px rgba(0, 0, 0, 0.85);
   }
 
   /* Keep in-screen fixed chrome relative to the phone frame */

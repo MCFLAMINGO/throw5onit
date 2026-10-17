@@ -40,7 +40,7 @@ console.log('3) Wiring');
 
 console.log('4) SW');
 {
-  assert(sw.includes("VERSION = 'v168'") || /v168/.test(sw), 'SW v168');
+  assert(/VERSION = 'v16[89]'/.test(sw) || /v169/.test(sw), 'SW >= v168');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
