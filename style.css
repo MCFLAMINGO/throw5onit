@@ -2981,24 +2981,65 @@ a.contact-detail-value { color: var(--accent); text-decoration: none; }
   opacity: 0.55;
   margin-top: -2px;
 }
-.join-bubble {
+.throw-bubble {
   z-index: 5;
   left: 50%;
   top: 48%;
-  width: 108px;
-  animation: joinPulse 2.8s ease-in-out infinite;
+  width: 118px;
+  animation: throwPulse 2.8s ease-in-out infinite;
 }
-.join-bubble .bubble-face {
+.throw-bubble .bubble-face {
   background: linear-gradient(160deg, #1fd6a0, #0b6b4a);
   border-color: rgba(180, 255, 220, 0.45);
-  font-size: 36px;
-  font-weight: 400;
+  font-size: 34px;
+  font-weight: 800;
   box-shadow: 0 0 0 0 rgba(31, 214, 160, 0.45), 0 14px 36px rgba(0,0,0,0.4);
 }
-.join-bubble .bubble-name { font-size: 13px; letter-spacing: 0.14em; }
-@keyframes joinPulse {
+.throw-bubble .bubble-name {
+  font-size: 14px;
+  letter-spacing: 0.16em;
+  font-weight: 800;
+}
+.throw-bubble.bet-pending .bubble-face {
+  background: linear-gradient(160deg, #ffb020, #c45e00);
+  border-color: rgba(255, 200, 120, 0.55);
+  animation: betPendingPulse 1.2s ease-in-out infinite;
+}
+.throw-bubble.bet-pending .bubble-name { color: #ffe6b0; }
+@keyframes throwPulse {
   0%, 100% { filter: drop-shadow(0 0 0 rgba(31,214,160,0)); }
   50% { filter: drop-shadow(0 0 18px rgba(31,214,160,0.45)); }
+}
+@keyframes betPendingPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,176,32,0.35), 0 14px 36px rgba(0,0,0,0.4); }
+  50% { box-shadow: 0 0 0 10px rgba(255,176,32,0), 0 14px 36px rgba(0,0,0,0.4); }
+}
+.group-link-chip {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 4px auto 0;
+  padding: 10px 18px;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.04);
+  color: #f2fff8;
+  cursor: pointer;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+.group-link-chip:active { background: rgba(31,214,160,0.12); border-color: rgba(31,214,160,0.35); }
+.group-link-title {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+.group-link-sub {
+  font-size: 11px;
+  opacity: 0.55;
 }
 .self-bubble {
   z-index: 4;

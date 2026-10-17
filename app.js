@@ -3173,6 +3173,29 @@ function onMoneyReceived(amount, from) {
    ═════════════════════════════════════════════════════════════════════ */
 // ── Pending Bet — glows THROW button amber when an open bet is nearby ──────────
 
+function getThrowHomeControls() {
+  return [
+    document.getElementById('bubble-throw'),
+    document.getElementById('btn-throw'),
+  ].filter(Boolean);
+}
+
+function setThrowHomeLabel(text, meta) {
+  const bubble = document.getElementById('bubble-throw');
+  if (bubble) {
+    const name = document.getElementById('bubble-throw-label') || bubble.querySelector('.bubble-name');
+    const sub = document.getElementById('bubble-throw-meta') || bubble.querySelector('.bubble-meta');
+    if (name) name.textContent = text;
+    if (sub && meta != null) sub.textContent = meta;
+  }
+  const legacy = document.getElementById('btn-throw');
+  const legacyLabel = legacy?.querySelector('span');
+  if (legacyLabel) legacyLabel.textContent = text;
+  else if (legacy && !legacy.querySelector('.bubble-name')) {
+    // plain text button
+  }
+}
+
 function setPendingBetButton(betData) {
   if (!betData || state.bet.isHost) return;
   // If this is a DIFFERENT bet than the one we joined, reset the joined guard
@@ -3184,12 +3207,13 @@ function setPendingBetButton(betData) {
   }
   if (state.bet.joined) return;
   state.pendingBet = betData;
-  const btn   = document.getElementById('btn-throw');
-  const label = btn?.querySelector('span');
-  if (!btn) return;
-  btn.classList.add('bet-pending');
-  if (label) label.textContent = 'BET $' + betData.amountPer;
-  btn.onclick = () => joinBetInstantly();
+  const btns = getThrowHomeControls();
+  if (!btns.length) return;
+  btns.forEach((btn) => {
+    btn.classList.add('bet-pending');
+    btn.onclick = () => joinBetInstantly();
+  });
+  setThrowHomeLabel('BET $' + betData.amountPer, 'tap to throw in');
 }
 
 async function joinBetInstantly() {
@@ -3203,11 +3227,10 @@ async function joinBetInstantly() {
   // Stop scanner so retained message can't re-trigger the button
   if (_betScanTimer) { clearTimeout(_betScanTimer); _betScanTimer = null; }
 
-  // Lock button immediately — prevent double tap
-  const btn   = document.getElementById('btn-throw');
-  const label = btn?.querySelector('span');
-  if (btn) btn.onclick = null;
-  if (label) label.textContent = 'THROWING…';
+  // Lock buttons immediately — prevent double tap
+  const btns = getThrowHomeControls();
+  btns.forEach((btn) => { btn.onclick = null; });
+  setThrowHomeLabel('THROWING…', 'into the pot');
 
   // Load bet into state
   Object.assign(state.bet, {
@@ -3246,23 +3269,22 @@ async function joinBetInstantly() {
     });
     bcSend('player_threw', { addr: myAddr, name: myName, amount: netAmt, side: 'yes' });
 
-    // Visual feedback — button locked green permanently (you're in)
+    // Visual feedback — locked in the pot
     state.pendingBet = null;
-    if (btn) {
-      btn.classList.remove('bet-pending');
+    btns.forEach((btn) => {
       btn.classList.add('bet-pending');
       btn.style.background = '#22c55e';
       btn.style.boxShadow = '0 0 30px rgba(34,197,94,0.6)';
       btn.onclick = null;
-      if (label) label.textContent = 'IN THE POT';
-    }
+    });
+    setThrowHomeLabel('IN THE POT', "you're in");
     moneyRain(4);
 
   } catch(e) {
     // Reset on failure so they can retry
     state.bet.joined = false;
-    if (label) label.textContent = 'FAILED — TAP TO RETRY';
-    if (btn) btn.onclick = () => joinBetInstantly();
+    setThrowHomeLabel('FAILED', 'tap to retry');
+    btns.forEach((btn) => { btn.onclick = () => joinBetInstantly(); });
     // Restart scanner
     if (!_betScanTimer) _betScanTimer = setTimeout(startBetScanner, 2000);
   }
@@ -3270,17 +3292,22 @@ async function joinBetInstantly() {
 
 function clearPendingBetButton() {
   state.pendingBet = null;
-  const btn   = document.getElementById('btn-throw');
-  const label = btn?.querySelector('span');
-  if (!btn) return;
-  btn.classList.remove('bet-pending');
-  // Clear any inline styles set during join flow so CSS classes take over cleanly
-  btn.style.background  = '';
-  btn.style.boxShadow   = '';
-  btn.style.opacity     = '';
-  btn.style.pointerEvents = '';
-  if (label) label.textContent = 'THROW';
-  btn.onclick = openThrowScreen;
+  const btns = getThrowHomeControls();
+  btns.forEach((btn) => {
+    btn.classList.remove('bet-pending');
+    btn.style.background  = '';
+    btn.style.boxShadow   = '';
+    btn.style.opacity     = '';
+    btn.style.pointerEvents = '';
+  });
+  setThrowHomeLabel('THROW', 'hold & flick');
+  const bubble = document.getElementById('bubble-throw');
+  if (bubble) {
+    bubble.onclick = () => openThrowScreen();
+    bubble._wired = true;
+  }
+  const legacy = document.getElementById('btn-throw');
+  if (legacy) legacy.onclick = openThrowScreen;
 }
 
 let _betScanTimer = null;
@@ -4676,7 +4703,7 @@ function renderBubbleHome() {
   if (!contacts.length) {
     const hint = document.createElement('div');
     hint.className = 'person-bubble empty-hint';
-    hint.innerHTML = '<span class="bubble-face">+</span><span class="bubble-name">Tap JOIN</span><span class="bubble-meta">connect friends</span>';
+    hint.innerHTML = '<span class="bubble-face">$</span><span class="bubble-name">Tap THROW</span><span class="bubble-meta">or JOIN to add friends</span>';
     field.appendChild(hint);
     return;
   }
@@ -4778,6 +4805,17 @@ function openPartyFloat() {
 }
 
 function wireBubbleHome() {
+  const throwBtn = document.getElementById('bubble-throw');
+  if (throwBtn && !throwBtn._wired) {
+    throwBtn._wired = true;
+    throwBtn.onclick = () => {
+      if (throwBtn.classList.contains('bet-pending') && state.pendingBet) {
+        joinBetInstantly();
+        return;
+      }
+      openThrowScreen();
+    };
+  }
   const join = document.getElementById('bubble-join');
   if (join && !join._wired) {
     join._wired = true;
@@ -4812,6 +4850,12 @@ function wireBubbleHome() {
   document.getElementById('group-sheet-close')?.addEventListener('click', closeGroupSheet);
   document.getElementById('group-sheet')?.addEventListener('click', (e) => {
     if (e.target && e.target.id === 'group-sheet') closeGroupSheet();
+  });
+  document.getElementById('btn-group-throw')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeGroupSheet();
+    openThrowScreen();
   });
   document.getElementById('btn-group-poker')?.addEventListener('click', (e) => {
     e.preventDefault();

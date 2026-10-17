@@ -42,7 +42,7 @@ console.log('4) Deal / group choice feedback');
 
 console.log('5) SW bump');
 {
-  assert(/VERSION = 'v169'/.test(sw) || /v169/.test(sw), 'SW v169');
+  assert(/VERSION = 'v17\d'|VERSION = 'v169'/.test(sw) || /v170/.test(sw), 'SW >= v169');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

@@ -343,10 +343,10 @@
     </div>
   </div>
 
-  <!-- Bubble constellation — people first. Load / stack hide behind you. -->
+  <!-- Bubble constellation — THROW is the verb; people orbit; group is secondary. -->
   <div class="bubble-home" id="bubble-home">
     <div class="bubble-atmosphere" aria-hidden="true"></div>
-    <p class="bubble-tagline">Tap a friend. Throw cash. Join the night.</p>
+    <p class="bubble-tagline">Throw cash at a friend — or into the room.</p>
 
     <div class="bubble-field" id="bubble-field" aria-label="Your people">
       <!-- People bubbles rendered by renderBubbleHome() -->
@@ -356,12 +356,17 @@
         <span class="bubble-meta" id="bubble-self-bal">$0</span>
       </button>
 
-      <button type="button" class="person-bubble join-bubble" id="bubble-join" title="Connect everyone">
-        <span class="bubble-face join-face">+</span>
-        <span class="bubble-name">JOIN</span>
-        <span class="bubble-meta">group</span>
+      <button type="button" class="person-bubble throw-bubble" id="bubble-throw" title="Throw cash">
+        <span class="bubble-face throw-face">$</span>
+        <span class="bubble-name" id="bubble-throw-label">THROW</span>
+        <span class="bubble-meta" id="bubble-throw-meta">hold &amp; flick</span>
       </button>
     </div>
+
+    <button type="button" class="group-link-chip" id="bubble-join" title="Connect everyone">
+      <span class="group-link-title">JOIN</span>
+      <span class="group-link-sub">Poker · Wager · Party</span>
+    </button>
 
     <!-- Legacy crew-row kept for tests / fallbacks — visually hidden -->
     <div class="crew-row visually-hidden" id="crew-row" aria-hidden="true"></div>
@@ -427,6 +432,10 @@
     <div class="group-sheet-brand">TONIGHT</div>
     <p class="group-sheet-lead">Everyone connected. What are we doing?</p>
     <div class="group-choice-row">
+      <button type="button" class="group-choice" id="btn-group-throw">
+        <span class="group-choice-title">Throw</span>
+        <span class="group-choice-sub">Cash at a friend · hold &amp; flick</span>
+      </button>
       <button type="button" class="group-choice" id="btn-group-poker">
         <span class="group-choice-title">Poker</span>
         <span class="group-choice-sub">Hold'em · throw into the pot</span>
