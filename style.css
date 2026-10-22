@@ -2981,24 +2981,65 @@ a.contact-detail-value { color: var(--accent); text-decoration: none; }
   opacity: 0.55;
   margin-top: -2px;
 }
-.join-bubble {
+.throw-bubble {
   z-index: 5;
   left: 50%;
   top: 48%;
-  width: 108px;
-  animation: joinPulse 2.8s ease-in-out infinite;
+  width: 118px;
+  animation: throwPulse 2.8s ease-in-out infinite;
 }
-.join-bubble .bubble-face {
+.throw-bubble .bubble-face {
   background: linear-gradient(160deg, #1fd6a0, #0b6b4a);
   border-color: rgba(180, 255, 220, 0.45);
-  font-size: 36px;
-  font-weight: 400;
+  font-size: 34px;
+  font-weight: 800;
   box-shadow: 0 0 0 0 rgba(31, 214, 160, 0.45), 0 14px 36px rgba(0,0,0,0.4);
 }
-.join-bubble .bubble-name { font-size: 13px; letter-spacing: 0.14em; }
-@keyframes joinPulse {
+.throw-bubble .bubble-name {
+  font-size: 14px;
+  letter-spacing: 0.16em;
+  font-weight: 800;
+}
+.throw-bubble.bet-pending .bubble-face {
+  background: linear-gradient(160deg, #ffb020, #c45e00);
+  border-color: rgba(255, 200, 120, 0.55);
+  animation: betPendingPulse 1.2s ease-in-out infinite;
+}
+.throw-bubble.bet-pending .bubble-name { color: #ffe6b0; }
+@keyframes throwPulse {
   0%, 100% { filter: drop-shadow(0 0 0 rgba(31,214,160,0)); }
   50% { filter: drop-shadow(0 0 18px rgba(31,214,160,0.45)); }
+}
+@keyframes betPendingPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,176,32,0.35), 0 14px 36px rgba(0,0,0,0.4); }
+  50% { box-shadow: 0 0 0 10px rgba(255,176,32,0), 0 14px 36px rgba(0,0,0,0.4); }
+}
+.group-link-chip {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 4px auto 0;
+  padding: 10px 18px;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.04);
+  color: #f2fff8;
+  cursor: pointer;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+.group-link-chip:active { background: rgba(31,214,160,0.12); border-color: rgba(31,214,160,0.35); }
+.group-link-title {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+.group-link-sub {
+  font-size: 11px;
+  opacity: 0.55;
 }
 .self-bubble {
   z-index: 4;
@@ -3026,19 +3067,20 @@ a.contact-detail-value { color: var(--accent); text-decoration: none; }
   opacity: 0.5;
 }
 
-/* Sheets */
+/* Sheets — above phone chrome / demo strip so Poker·Wager·Party taps land */
 .sheet-overlay {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 10050;
   background: rgba(0,0,0,0.55);
   display: flex;
   align-items: flex-end;
   justify-content: center;
   padding: 16px;
   animation: sheetFade 180ms ease;
+  -webkit-tap-highlight-color: transparent;
 }
-.sheet-overlay.hidden { display: none; }
+.sheet-overlay.hidden { display: none !important; }
 @keyframes sheetFade {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -3051,6 +3093,7 @@ a.contact-detail-value { color: var(--accent); text-decoration: none; }
   border-radius: 22px 22px 18px 18px;
   padding: 22px 18px 20px;
   animation: sheetUp 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: auto;
 }
 @keyframes sheetUp {
   from { transform: translateY(24px); opacity: 0.6; }
@@ -5238,7 +5281,7 @@ button:disabled,
 .history-sheet {
   position: fixed;
   inset: 0;
-  z-index: 800;
+  z-index: 10050;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -5586,7 +5629,9 @@ button:disabled,
   .tx-flash,
   .points-modal,
   .backup-offer-modal,
-  .deal-push {
+  .deal-push,
+  .sheet-overlay,
+  .history-sheet {
     inset: auto !important;
     top: 50% !important;
     left: 50% !important;
@@ -5605,6 +5650,20 @@ button:disabled,
       0 0 0 12px #101010,
       0 32px 96px rgba(0, 0, 0, 0.85);
     z-index: 20;
+  }
+
+  /* Sheets / history sit above the active screen inside the same phone frame */
+  .sheet-overlay,
+  .history-sheet {
+    z-index: 40;
+    padding: 12px;
+    align-items: flex-end;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.1),
+      0 0 0 12px #101010,
+      0 32px 96px rgba(0, 0, 0, 0.85);
   }
 
   /* Keep in-screen fixed chrome relative to the phone frame */

@@ -370,17 +370,22 @@ function showScreen(id) {
   const next = document.getElementById('screen-' + id);
   if (!next) return;
 
-  // Mark outgoing screens for a clean exit frame, then clear
+  // Mark outgoing screens for a clean exit frame
   document.querySelectorAll('.screen.active').forEach(el => {
     if (el !== next) el.classList.add('exit');
   });
 
+  // Activate immediately — inactive screens have pointer-events:none, so waiting
+  // 40ms before .active left every button dead during the fade.
+  next.classList.remove('exit');
+  next.classList.add('active');
+  currentScreen = id;
+
   _screenTimer = setTimeout(() => {
-    document.querySelectorAll('.screen.active, .screen.exit').forEach(el => {
+    document.querySelectorAll('.screen.exit').forEach(el => {
       el.classList.remove('active', 'exit');
     });
     next.classList.add('active');
-    currentScreen = id;
     try { next.scrollTop = 0; } catch(_) {}
     if (id === 'first-scan') {
       try { stopFirstScan(); } catch(_) {}
@@ -3168,6 +3173,29 @@ function onMoneyReceived(amount, from) {
    ═════════════════════════════════════════════════════════════════════ */
 // ── Pending Bet — glows THROW button amber when an open bet is nearby ──────────
 
+function getThrowHomeControls() {
+  return [
+    document.getElementById('bubble-throw'),
+    document.getElementById('btn-throw'),
+  ].filter(Boolean);
+}
+
+function setThrowHomeLabel(text, meta) {
+  const bubble = document.getElementById('bubble-throw');
+  if (bubble) {
+    const name = document.getElementById('bubble-throw-label') || bubble.querySelector('.bubble-name');
+    const sub = document.getElementById('bubble-throw-meta') || bubble.querySelector('.bubble-meta');
+    if (name) name.textContent = text;
+    if (sub && meta != null) sub.textContent = meta;
+  }
+  const legacy = document.getElementById('btn-throw');
+  const legacyLabel = legacy?.querySelector('span');
+  if (legacyLabel) legacyLabel.textContent = text;
+  else if (legacy && !legacy.querySelector('.bubble-name')) {
+    // plain text button
+  }
+}
+
 function setPendingBetButton(betData) {
   if (!betData || state.bet.isHost) return;
   // If this is a DIFFERENT bet than the one we joined, reset the joined guard
@@ -3179,12 +3207,13 @@ function setPendingBetButton(betData) {
   }
   if (state.bet.joined) return;
   state.pendingBet = betData;
-  const btn   = document.getElementById('btn-throw');
-  const label = btn?.querySelector('span');
-  if (!btn) return;
-  btn.classList.add('bet-pending');
-  if (label) label.textContent = 'BET $' + betData.amountPer;
-  btn.onclick = () => joinBetInstantly();
+  const btns = getThrowHomeControls();
+  if (!btns.length) return;
+  btns.forEach((btn) => {
+    btn.classList.add('bet-pending');
+    btn.onclick = () => joinBetInstantly();
+  });
+  setThrowHomeLabel('BET $' + betData.amountPer, 'tap to throw in');
 }
 
 async function joinBetInstantly() {
@@ -3198,11 +3227,10 @@ async function joinBetInstantly() {
   // Stop scanner so retained message can't re-trigger the button
   if (_betScanTimer) { clearTimeout(_betScanTimer); _betScanTimer = null; }
 
-  // Lock button immediately — prevent double tap
-  const btn   = document.getElementById('btn-throw');
-  const label = btn?.querySelector('span');
-  if (btn) btn.onclick = null;
-  if (label) label.textContent = 'THROWING…';
+  // Lock buttons immediately — prevent double tap
+  const btns = getThrowHomeControls();
+  btns.forEach((btn) => { btn.onclick = null; });
+  setThrowHomeLabel('THROWING…', 'into the pot');
 
   // Load bet into state
   Object.assign(state.bet, {
@@ -3241,23 +3269,22 @@ async function joinBetInstantly() {
     });
     bcSend('player_threw', { addr: myAddr, name: myName, amount: netAmt, side: 'yes' });
 
-    // Visual feedback — button locked green permanently (you're in)
+    // Visual feedback — locked in the pot
     state.pendingBet = null;
-    if (btn) {
-      btn.classList.remove('bet-pending');
+    btns.forEach((btn) => {
       btn.classList.add('bet-pending');
       btn.style.background = '#22c55e';
       btn.style.boxShadow = '0 0 30px rgba(34,197,94,0.6)';
       btn.onclick = null;
-      if (label) label.textContent = 'IN THE POT';
-    }
+    });
+    setThrowHomeLabel('IN THE POT', "you're in");
     moneyRain(4);
 
   } catch(e) {
     // Reset on failure so they can retry
     state.bet.joined = false;
-    if (label) label.textContent = 'FAILED — TAP TO RETRY';
-    if (btn) btn.onclick = () => joinBetInstantly();
+    setThrowHomeLabel('FAILED', 'tap to retry');
+    btns.forEach((btn) => { btn.onclick = () => joinBetInstantly(); });
     // Restart scanner
     if (!_betScanTimer) _betScanTimer = setTimeout(startBetScanner, 2000);
   }
@@ -3265,17 +3292,22 @@ async function joinBetInstantly() {
 
 function clearPendingBetButton() {
   state.pendingBet = null;
-  const btn   = document.getElementById('btn-throw');
-  const label = btn?.querySelector('span');
-  if (!btn) return;
-  btn.classList.remove('bet-pending');
-  // Clear any inline styles set during join flow so CSS classes take over cleanly
-  btn.style.background  = '';
-  btn.style.boxShadow   = '';
-  btn.style.opacity     = '';
-  btn.style.pointerEvents = '';
-  if (label) label.textContent = 'THROW';
-  btn.onclick = openThrowScreen;
+  const btns = getThrowHomeControls();
+  btns.forEach((btn) => {
+    btn.classList.remove('bet-pending');
+    btn.style.background  = '';
+    btn.style.boxShadow   = '';
+    btn.style.opacity     = '';
+    btn.style.pointerEvents = '';
+  });
+  setThrowHomeLabel('THROW', 'hold & flick');
+  const bubble = document.getElementById('bubble-throw');
+  if (bubble) {
+    bubble.onclick = () => openThrowScreen();
+    bubble._wired = true;
+  }
+  const legacy = document.getElementById('btn-throw');
+  if (legacy) legacy.onclick = openThrowScreen;
 }
 
 let _betScanTimer = null;
@@ -4671,7 +4703,7 @@ function renderBubbleHome() {
   if (!contacts.length) {
     const hint = document.createElement('div');
     hint.className = 'person-bubble empty-hint';
-    hint.innerHTML = '<span class="bubble-face">+</span><span class="bubble-name">Tap JOIN</span><span class="bubble-meta">connect friends</span>';
+    hint.innerHTML = '<span class="bubble-face">$</span><span class="bubble-name">Tap THROW</span><span class="bubble-meta">or JOIN to add friends</span>';
     field.appendChild(hint);
     return;
   }
@@ -4773,6 +4805,17 @@ function openPartyFloat() {
 }
 
 function wireBubbleHome() {
+  const throwBtn = document.getElementById('bubble-throw');
+  if (throwBtn && !throwBtn._wired) {
+    throwBtn._wired = true;
+    throwBtn.onclick = () => {
+      if (throwBtn.classList.contains('bet-pending') && state.pendingBet) {
+        joinBetInstantly();
+        return;
+      }
+      openThrowScreen();
+    };
+  }
   const join = document.getElementById('bubble-join');
   if (join && !join._wired) {
     join._wired = true;
@@ -4783,6 +4826,14 @@ function wireBubbleHome() {
     self._wired = true;
     self.onclick = () => openPocketSheet();
   }
+
+  // Stop sheet-card taps from bubbling to the backdrop closer
+  document.querySelectorAll('.sheet-card').forEach((card) => {
+    if (card._sheetStop) return;
+    card._sheetStop = true;
+    card.addEventListener('click', (e) => e.stopPropagation());
+  });
+
   document.getElementById('pocket-sheet-close')?.addEventListener('click', closePocketSheet);
   document.getElementById('pocket-sheet')?.addEventListener('click', (e) => {
     if (e.target && e.target.id === 'pocket-sheet') closePocketSheet();
@@ -4800,15 +4851,29 @@ function wireBubbleHome() {
   document.getElementById('group-sheet')?.addEventListener('click', (e) => {
     if (e.target && e.target.id === 'group-sheet') closeGroupSheet();
   });
-  document.getElementById('btn-group-poker')?.addEventListener('click', () => {
+  document.getElementById('btn-group-throw')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     closeGroupSheet();
-    openPokerSetup().catch(e => showError(e.message || 'Could not open table'));
+    openThrowScreen();
   });
-  document.getElementById('btn-group-wager')?.addEventListener('click', () => {
+  document.getElementById('btn-group-poker')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeGroupSheet();
+    openPokerSetup().catch(err => showError(err.message || 'Could not open table'));
+  });
+  document.getElementById('btn-group-wager')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     closeGroupSheet();
     openBetSetup();
   });
-  document.getElementById('btn-group-party')?.addEventListener('click', () => openPartySheet());
+  document.getElementById('btn-group-party')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openPartySheet();
+  });
   document.getElementById('btn-group-qr')?.addEventListener('click', async () => {
     closeGroupSheet();
     try { await startHangoutHost(); } catch (e) { openDockScreen(); showToast(e.message || 'Hangout'); }
@@ -5544,6 +5609,8 @@ function shareOnX(text) {
 function hideBootLoader() {
   const bl = document.getElementById('boot-loader');
   if (!bl) return;
+  // Drop clicks immediately — opacity:0 still captures taps at z-index 9999
+  bl.style.pointerEvents = 'none';
   bl.style.transition = 'opacity 0.2s';
   bl.style.opacity = '0';
   setTimeout(() => { try { bl.remove(); } catch(_) {} }, 250);
@@ -5843,11 +5910,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (resumePot) resumePot.onclick = () => resumePotSession();
   const pokerStart = document.getElementById('btn-poker-start');
   if (pokerStart) pokerStart.onclick = () => {
-    startPokerGame(state.poker?.seats || [], state.poker?.roomCode).catch(e => {
+    const seats = state.poker?.seats || [];
+    startPokerGame(seats, state.poker?.roomCode).catch(e => {
       console.error('startPokerGame failed', e);
       showError('Could not start: ' + (e.message || e));
-      pokerStart.disabled = false;
-      pokerStart.textContent = 'Start Game';
+      pokerStart.disabled = seats.length < 2;
+      pokerStart.textContent = 'Deal — start the hand';
     });
   };
   const pokerAdv = document.getElementById('btn-poker-advance');
@@ -7157,7 +7225,13 @@ function renderPokerSetup() {
     };
   });
 
-  if (startBtn) startBtn.disabled = p.seats.length < 2;
+  if (startBtn) {
+    const ready = p.isHost && p.seats.length >= 2;
+    startBtn.disabled = !ready;
+    startBtn.textContent = p.isHost
+      ? (ready ? 'Deal — start the hand' : 'Seat 2+ to deal')
+      : 'Waiting for host to deal';
+  }
   if (p.isHost) { try { publishHostPokerBeacon(); } catch(_) {} }
   try { persistPokerSession(); } catch(_) {}
 }
@@ -7262,10 +7336,22 @@ function acceptPokerInvite(data) {
 
 async function startPokerGame(seats, roomCode) {
   const p = state.poker;
-  if (!p || !p.isHost) return;
-  if (!seats || seats.length < 2) return;
-
   const startBtn = document.getElementById('btn-poker-start');
+  if (!p) {
+    showToast('Open a table first');
+    return;
+  }
+  if (!p.isHost) {
+    showToast('Only the host can deal');
+    return;
+  }
+  seats = seats && seats.length ? seats : (p.seats || []);
+  if (!seats || seats.length < 2) {
+    showToast('Seat 2+ players — tap crew or Seat everyone');
+    if (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Deal — start the hand'; }
+    return;
+  }
+
   if (startBtn) {
     startBtn.disabled = true;
     startBtn.textContent = 'Seating crew…';

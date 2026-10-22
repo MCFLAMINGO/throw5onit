@@ -39,7 +39,7 @@
 </head>
 <body>
 <!-- BOOT LOADER — shows instantly, hidden once wallet check resolves -->
-<div id="boot-loader" style="position:fixed;inset:0;background:#050505;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:9999;">
+<div id="boot-loader" style="position:fixed;inset:0;background:#050505;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:9999;pointer-events:auto;">
   <div style="width:64px;height:64px;border-radius:18px;background:#141414;border:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;box-shadow:0 12px 40px rgba(0,0,0,0.45)">
     <img src="icon-192.png" width="40" height="40" alt="" style="border-radius:10px" onerror="this.style.display='none'" />
   </div>
@@ -343,10 +343,10 @@
     </div>
   </div>
 
-  <!-- Bubble constellation — people first. Load / stack hide behind you. -->
+  <!-- Bubble constellation — THROW is the verb; people orbit; group is secondary. -->
   <div class="bubble-home" id="bubble-home">
     <div class="bubble-atmosphere" aria-hidden="true"></div>
-    <p class="bubble-tagline">Tap a friend. Throw cash. Join the night.</p>
+    <p class="bubble-tagline">Throw cash at a friend — or into the room.</p>
 
     <div class="bubble-field" id="bubble-field" aria-label="Your people">
       <!-- People bubbles rendered by renderBubbleHome() -->
@@ -356,12 +356,17 @@
         <span class="bubble-meta" id="bubble-self-bal">$0</span>
       </button>
 
-      <button type="button" class="person-bubble join-bubble" id="bubble-join" title="Connect everyone">
-        <span class="bubble-face join-face">+</span>
-        <span class="bubble-name">JOIN</span>
-        <span class="bubble-meta">group</span>
+      <button type="button" class="person-bubble throw-bubble" id="bubble-throw" title="Throw cash">
+        <span class="bubble-face throw-face">$</span>
+        <span class="bubble-name" id="bubble-throw-label">THROW</span>
+        <span class="bubble-meta" id="bubble-throw-meta">hold &amp; flick</span>
       </button>
     </div>
+
+    <button type="button" class="group-link-chip" id="bubble-join" title="Connect everyone">
+      <span class="group-link-title">JOIN</span>
+      <span class="group-link-sub">Poker · Wager · Party</span>
+    </button>
 
     <!-- Legacy crew-row kept for tests / fallbacks — visually hidden -->
     <div class="crew-row visually-hidden" id="crew-row" aria-hidden="true"></div>
@@ -427,6 +432,10 @@
     <div class="group-sheet-brand">TONIGHT</div>
     <p class="group-sheet-lead">Everyone connected. What are we doing?</p>
     <div class="group-choice-row">
+      <button type="button" class="group-choice" id="btn-group-throw">
+        <span class="group-choice-title">Throw</span>
+        <span class="group-choice-sub">Cash at a friend · hold &amp; flick</span>
+      </button>
       <button type="button" class="group-choice" id="btn-group-poker">
         <span class="group-choice-title">Poker</span>
         <span class="group-choice-sub">Hold'em · throw into the pot</span>
@@ -753,7 +762,7 @@
       This phone is the table
     </label>
 
-    <button class="btn-primary" id="btn-poker-start" disabled>Deal — start the hand</button>
+    <button type="button" class="btn-primary" id="btn-poker-start" disabled>Deal — start the hand</button>
     <button type="button" class="btn-ghost" id="btn-poker-jabs-setup" style="width:100%;margin-top:10px">Record stall jabs</button>
     <button type="button" class="btn-ghost" id="btn-poker-leave-setup" style="width:100%;margin-top:8px;opacity:0.7">Leave table</button>
   </div>
